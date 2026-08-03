@@ -637,7 +637,28 @@ void MonicaModel::applyTillage(double depth) {
 
 void MonicaModel::step() {
   if (isCropPlanted() && !_clearCropUponNextDay) {
-    cropStep();
+    if (_cropPs.__enable_hourly_respiration__) {
+      cropStep();
+      /* @ToDo FS: implement hourly time step for crop module calculations?
+      auto date = _currentStepDate;
+
+      auto climateData = currentStepClimateData();
+
+      // do nothing if there is no crop
+      if (!_currentCropModule) return;
+
+      p_daysWithCrop++;
+
+      unsigned int julday = date.julianDay();
+      for (int h = 0; h < 24; ++h) {
+        auto climateData_hourly = ...;
+        cropStep_hourly();
+        ...
+      }
+      */
+    } else {
+      cropStep();
+    }
   } else if (_intercropping.isAsync()) {
     // tell other side that there is currently no crop
     auto wreq = _intercropping.writer.writeRequest();

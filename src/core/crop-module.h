@@ -214,6 +214,14 @@ public:
 
   void fc_CropDryMatter(double vw_MeanAirTemperature);
 
+  // FS: hourly photosynthesis stress factors and stress factors-dependent partitioning
+  //     Is there maybe a better way of doing this?
+  double fc_HeatStressImpact_hourly(double vc_PhotoTemperature, int vc_DaysAfterBeginFlowering_);
+  double fc_FrostKill_hourly(double vc_CrownTemperature);
+  double fc_DroughtImpactOnFertility_hourly(double vc_TranspirationDeficit_hourly, double vc_OxygenDeficit_hourly);
+  pair<double, double> fc_CropNitrogen_hourly();
+  void fc_CropDryMatter_hourly(double vw_MeanAirTemperature, double vc_NetPhotosynthesis, double vc_CropNRedux, double vc_TimeStep);
+
   double fc_ReferenceEvapotranspiration(double vw_MaxAirTemperature,
                                         double vw_MinAirTemperature,
                                         double vw_RelativeHumidity,

@@ -2666,7 +2666,9 @@ void CropModule::fc_CropPhotosynthesis(double vw_MeanAirTemperature,
     // vector<double> hourlyGrossCO2Assimilation, hourlyGrossCO2AssimilationReference;
     dailyGP = 0.;
     dailyGPRef = 0.;
-    for (int h = sunriseH; h < sunsetH; ++h) {  // hourly overclocked photosynthesis loop
+
+    // hourly overclocked photosynthesis loop
+    for (int h = 0; h < 24; ++h) {  // for (int h = sunriseH; h < sunsetH; ++h) {
       // hourly inputs needed for photosynthesis
       struct hp {
         double leafT;
@@ -2775,30 +2777,194 @@ void CropModule::fc_CropPhotosynthesis(double vw_MeanAirTemperature,
                         // 12 = rectangular hyperbola light response curve, using 3pt gauss integration over leaf angles (inspired by style 2)
         hourlyPhoto = hPhoto::Spitters_canop_photo_3p(hp_in.solarEl, vc_LeafAreaIndex, inst_dir_rad, inst_diff_rad, vc_AssimilationRate_hourly, vc_RadiationUseEfficiency_hourly, kdf, 0.2, kgpha, style);
         hourlyPhotoRef = hPhoto::Spitters_canop_photo_3p(hp_in.solarEl, cropPs.pc_ReferenceLeafAreaIndex, inst_dir_rad, inst_diff_rad, vc_AssimilationRateReference_hourly, vc_RadiationUseEfficiencyReference_hourly, kdfRef, 0.2, kgpha, style);
-      
-        // @ToDo FS: test this
-        if (cropPs.__enable_hourly_outputs__) {
-          tout()
-            << currentDate.toIsoDateString()
-            << "," << h
-            << "," << speciesPs.pc_SpeciesId << "/" << cultivarPs.pc_CultivarId
-            << "," << hp_in.leafT
-            << "," << inst_diff_rad
-            << "," << inst_dir_rad
-            << "," << hp_in.solarEl * 180. / M_PI
-            << "," << hourlyPhoto
-            << "," << hourlyPhotoRef
-            << endl;
-        }
       }
-      // hourlyGrossCO2Assimilation.push_back(hourlyPhoto);
-      // hourlyGrossCO2AssimilationReference.push_back(hourlyPhotoRef);
-      dailyGP += hourlyPhoto;
-      dailyGPRef += hourlyPhotoRef;
+
+      // @ToDo FS: test this
+      if (cropPs.__enable_hourly_outputs__) {
+        tout()
+          << currentDate.toIsoDateString()
+          << "," << h
+          << "," << speciesPs.pc_SpeciesId << "/" << cultivarPs.pc_CultivarId
+          << "," << hp_in.leafT
+          << "," << inst_diff_rad
+          << "," << inst_dir_rad
+          << "," << hp_in.solarEl * 180. / M_PI
+          << "," << hourlyPhoto
+          << "," << hourlyPhotoRef
+          << endl;
+      }
+
+
+      if (!cropPs.__enable_hourly_respiration__) {  // FS: minimal approach, only using hourly temporal resolution for the irradiance part of photosynthesis 
+        // hourlyGrossCO2Assimilation.push_back(hourlyPhoto);
+        // hourlyGrossCO2AssimilationReference.push_back(hourlyPhotoRef);
+        dailyGP += hourlyPhoto;
+        dailyGPRef += hourlyPhotoRef;
+      } else {                                      // FS: more detailed approach, including hourly stress factors and respiration calculations
+
+
+        // @ToDo FS: extend hourly resolution to the whole photosynthesis caclulations?
+        //           (currently this is not the case; only minimal version with gross photosyntheisis without hourly respiration and without hourly stress factors calculated hourly so far)
+
+        // double vc_GrossCO2Assimilation_hourly = 0.0;
+        // double vc_GrossCO2AssimilationReference_hourly = 0.0;
+        // double vc_GrossPhotosynthesis_hourly = 0.0;
+        // double vc_GrossPhotosynthesis_mol_hourly = 0.0;
+        // double vc_GrossPhotosynthesisReference_mol_hourly = 0.0;
+        // double vc_Assimilates_hourly = 0.0;
+        // double vc_GrossAssimilates_hourly = 0.0;
+        // double vc_MaintenanceRespirationAS_hourly = 0.0;
+        // double vc_GrowthRespirationAS_hourly = 0.0;
+        // double vc_TotalRespired_hourly = 0.0;
+
+        double vc_GrossCO2Assimilation_hourly = hourlyPhoto;
+        double vc_GrossCO2AssimilationReference_hourly = hourlyPhotoRef;
+
+        // Calculation of photosynthesis rate from [kg CO2 ha-1 d-1] to [kg CH2O ha-1 d-1]
+        double vc_GrossPhotosynthesis_hourly = vc_GrossCO2Assimilation_hourly * 30.0 / 44.0;
+
+        // Calculation of photosynthesis rate from [kg CO2 ha-1 d-1]  to [mol m-2 s-1] or [cm3 cm-2 s-1]
+        double vc_GrossPhotosynthesis_mol_hourly = vc_GrossCO2Assimilation_hourly * 22414.0 / (10.0 * 3600.0 * 24.0 * 44.0);
+        double vc_GrossPhotosynthesisReference_mol_hourly = vc_GrossCO2AssimilationReference_hourly * 22414.0 / (10.0 * 3600.0 * 24.0 * 44.0);
+
+        // Converting photosynthesis rate from [kg CO2 ha leaf-1 d-1] to [kg CH2O ha-1  d-1]
+        double vc_Assimilates_hourly = vc_GrossCO2Assimilation_hourly * 30.0 / 44.0;
+
+
+        // hourly stress factors
+/*
+    fc_CropDryMatter(vw_MeanAirTemperature);
+*/
+        ////////// @ToDo FS: experimental; work in progress
+        // reduction value for assimilate amount to simulate field conditions;
+        vc_Assimilates_hourly *= pc_FieldConditionModifier;                                         // FS: daily should be good enough?
+
+        // heat stress?
+        double vc_PhotoTemperature_hourly = hp_in.leafT;
+        double vc_CropHeatRedux_hourly = fc_HeatStressImpact_hourly(vc_PhotoTemperature_hourly, vc_DaysAfterBeginFlowering);
+        if (h >= 23) vc_DaysAfterBeginFlowering += 1;                                 // only increment when last hour of day is reached
+        vc_Assimilates_hourly *= vc_CropHeatRedux_hourly;                             // @ToDo FS: is this factor even used in photosynthesis?
+
+        // reduction value for assimilate amount to simulate frost damage;
+        if (_frostKillOn) {
+          double vc_CrownTemperature_hourly = hp_in.leafT;
+          double vc_CropFrostRedux_hourly = fc_FrostKill_hourly(vc_CrownTemperature_hourly);
+          vc_Assimilates_hourly *= vc_CropFrostRedux_hourly;
+        }
+
+        // vc_OxygenDeficit = fc_OxygenDeficiency(pc_CriticalOxygenContent[vc_DevelopmentalStage]); // vc_TimeStep dependent? // FS: is daily good enough?
+        double vc_OxygenDeficit_hourly = vc_OxygenDeficit;
+        vc_Assimilates_hourly *= vc_OxygenDeficit_hourly;
+
+        // vc_OxygenDeficit separates drought stress (ETa/Etp) from saturation stress.
+        // old VSWELL
+        double vc_DroughtStressThreshold_hourly = vc_OxygenDeficit_hourly < 1.0
+                                          ? 0.0
+                                          : pc_DroughtStressThreshold[vc_DevelopmentalStage];
+
+        // FS: is it good enough to have this factor only in daily resolution here?
+        double vc_TranspirationDeficit_hourly = vc_TranspirationDeficit;
+        if (vc_TranspirationDeficit_hourly < vc_DroughtStressThreshold) {
+            vc_Assimilates_hourly *= vc_TranspirationDeficit_hourly;
+        }
+        
+        auto [rootNRedux_hourly, vc_CropNRedux_hourly] = fc_CropNitrogen_hourly();
+        vc_Assimilates_hourly *= vc_CropNRedux_hourly;                               // @ToDo FS: is this factor even used in photosynthesis?
+
+        double vc_DroughtImpactOnFertility_hourly = fc_DroughtImpactOnFertility_hourly(vc_TranspirationDeficit_hourly, vc_OxygenDeficit_hourly);
+        vc_Assimilates_hourly *= vc_DroughtImpactOnFertility_hourly;                 // @ToDo FS: is this factor even used in photosynthesis?
+
+        //////////
+
+
+        double vc_GrossAssimilates_hourly = vc_Assimilates_hourly;
+
+
+        // ######################################################
+        // hourly respiration (simplified AGROSIM / daily MONICA)
+        // ######################################################
+        double vc_MaintenanceRespirationSum = 0.0;
+        // AGOSIM night and day maintenance and growth respiration
+        for (int i_Organ = 0; i_Organ < pc_NumberOfOrgans; i_Organ++) {
+          vc_MaintenanceRespirationSum += vc_OrganGreenBiomass[i_Organ] * pc_OrganMaintenanceRespiration[i_Organ]; // [kg CH2O ha-1]
+                                        // * vc_ActiveFraction[i_Organ]; wenn nicht schon durch acc dead matter abgedeckt
+        }
+        double vc_MaintenanceRespiration = vc_MaintenanceRespirationSum * pow(2.0, (pc_MaintenanceRespirationParameter_1 *
+                                                                                      (hp_in.leafT -  // for now, this is air temperature; maybe use canopy temperature or organ-specific temperature and put this in the loop as well?
+                                                                                        pc_MaintenanceRespirationParameter_2))) / 12.0;  // @todo: [g m-2] --> [kg ha-1]
+        double vc_MaintenanceRespirationAS_hourly = vc_MaintenanceRespiration; // [kg CH2O ha-1]
+        vc_Assimilates_hourly -= vc_MaintenanceRespiration; // [kg CH2O ha-1]
+
+
+        double vc_GrowthRespirationSum = 0.0;
+        if (vc_Assimilates_hourly > 0) {
+          for (int i_Organ = 0; i_Organ < pc_NumberOfOrgans; i_Organ++) {
+            vc_GrowthRespirationSum += pc_AssimilatePartitioningCoeff[vc_DevelopmentalStage][i_Organ] * vc_Assimilates *
+                                      pc_OrganGrowthRespiration[i_Organ];
+          }
+        }
+
+        double vc_GrowthRespiration = 0.0;
+        if (vc_Assimilates_hourly > 0.0) {
+          vc_GrowthRespiration = vc_GrowthRespirationSum * pow(2.0, (pc_GrowthRespirationParameter_1 *
+                                                                          (hp_in.leafT -
+                                                                            pc_GrowthRespirationParameter_2))) / 12.0;  // [kg CH2O ha-1]
+          if (vc_Assimilates_hourly > vc_GrowthRespiration) {
+            vc_Assimilates_hourly -= vc_GrowthRespiration;
+          } else {
+            vc_GrowthRespiration = vc_Assimilates_hourly; // in this case the plant will be restricted in growth!
+            vc_Assimilates = 0.0;
+          }
+        }
+        double vc_GrowthRespirationAS_hourly = vc_GrowthRespiration; // [kg CH2O ha-1]
+        double vc_TotalRespired_hourly = vc_GrossAssimilates_hourly - vc_Assimilates_hourly;             // [kg CH2O ha-1]
+
+        // to reactivate HERMES algorithms, needs to be vc_NetPhotosynthesis
+        // used instead of  vc_Assimilates in the subsequent methods
+        // #########################################################################
+        // HERMES calculation of maintenance respiration in dependence of temperature
+
+        // old TEFF
+        double vc_MaintenanceTemperatureDependency = pow(2.0, (0.1 * hp_in.leafT - 2.5));
+
+        // old MAINTS
+        double vc_MaintenanceRespiration = 0.0;
+        for (int i_Organ = 0; i_Organ < pc_NumberOfOrgans; i_Organ++) {
+          vc_MaintenanceRespiration += vc_OrganGreenBiomass[i_Organ] * pc_OrganMaintenanceRespiration[i_Organ];
+        }
+
+        if (vc_GrossPhotosynthesis_hourly < (vc_MaintenanceRespiration * vc_MaintenanceTemperatureDependency)) {
+          vc_NetMaintenanceRespiration = vc_GrossPhotosynthesis_hourly;
+        } else {
+          vc_NetMaintenanceRespiration = vc_MaintenanceRespiration * vc_MaintenanceTemperatureDependency;
+        }
+
+        if (hp_in.leafT < pc_MinimumTemperatureForAssimilation) {
+          vc_GrossPhotosynthesis_hourly = vc_NetMaintenanceRespiration;
+        }
+
+        // add to daily variable (accumulation)
+        vc_GrossCO2Assimilation += vc_GrossCO2Assimilation_hourly;
+        vc_GrossCO2AssimilationReference += vc_GrossCO2AssimilationReference_hourly;
+        vc_GrossPhotosynthesis += vc_GrossPhotosynthesis_hourly;
+        vc_GrossPhotosynthesis_mol += vc_GrossPhotosynthesis_mol_hourly;
+        vc_GrossPhotosynthesisReference_mol += vc_GrossPhotosynthesisReference_mol_hourly;
+        vc_Assimilates += vc_Assimilates_hourly;
+        vc_GrossAssimilates += vc_GrossAssimilates_hourly;
+        vc_MaintenanceRespirationAS += vc_MaintenanceRespirationAS_hourly;
+        vc_GrowthRespirationAS += vc_GrowthRespirationAS_hourly;
+        vc_TotalRespired += vc_TotalRespired_hourly;
+
+
+        // // stress factors dependent partitioning?
+        // fc_CropDryMatter_hourly(hp_in.leafT, vc_Assimilates_hourly, vc_CropNRedux_hourly, vc_TimeStep / 24.0);
+
+      }
     }
 
-    double _mean_of_hourlyAirT = accumulate(hourlyAirT.begin(), hourlyAirT.end(), 0.) / hourlyAirT.size();  //FS: DEBUG only so far; when hourly data is being read in, should something like this maybe replace vw_MeanAirTemperature ???
-    auto [_min_of_hourlyAirT, _max_of_hourlyAirT] = minmax_element(hourlyAirT.begin(), hourlyAirT.end());   //FS: DEBUG only so far; when hourly data is being read in, should something like this maybe replace vw_MinAirTemperature an vw_MaxAirTemperature ???
+
+    // double _mean_of_hourlyAirT = accumulate(hourlyAirT.begin(), hourlyAirT.end(), 0.) / hourlyAirT.size();  //FS: DEBUG only so far; when hourly data is being read in, should something like this maybe replace vw_MeanAirTemperature ???
+    // auto [_min_of_hourlyAirT, _max_of_hourlyAirT] = minmax_element(hourlyAirT.begin(), hourlyAirT.end());   //FS: DEBUG only so far; when hourly data is being read in, should something like this maybe replace vw_MinAirTemperature an vw_MaxAirTemperature ???
 
     // calculate variables needed for respiration AGROSIM
     vector<double> hourlyAirT_day = vector<double>(hourlyAirT.begin()+sunriseH, hourlyAirT.begin()+sunsetH);  //FS: consistency: hourlyAirT.begin()+sunsetH+1 if including sunsetH
@@ -2815,144 +2981,147 @@ void CropModule::fc_CropPhotosynthesis(double vw_MeanAirTemperature,
   }
 #pragma endregion hourly photosynthesis
 
-  // Use aggregated daily canopy photosynthesis results?
-  vc_GrossCO2Assimilation = cropPs.__enable_hourly_photosynthesis__
-                            ? dailyGP
-                            : vc_GrossCO2Assimilation;
-  vc_GrossCO2AssimilationReference = cropPs.__enable_hourly_photosynthesis__
-                                     ? dailyGPRef
-                                     : vc_GrossCO2AssimilationReference;
+  if (!cropPs.__enable_hourly_respiration__) {
+    // Use aggregated daily canopy photosynthesis results?
+    vc_GrossCO2Assimilation = cropPs.__enable_hourly_photosynthesis__
+                              ? dailyGP
+                              : vc_GrossCO2Assimilation;
+    vc_GrossCO2AssimilationReference = cropPs.__enable_hourly_photosynthesis__
+                                      ? dailyGPRef
+                                      : vc_GrossCO2AssimilationReference;
 
 
-  // Calculation of photosynthesis rate from [kg CO2 ha-1 d-1] to [kg CH2O ha-1 d-1]
-  vc_GrossPhotosynthesis = vc_GrossCO2Assimilation * 30.0 / 44.0;
+    // Calculation of photosynthesis rate from [kg CO2 ha-1 d-1] to [kg CH2O ha-1 d-1]
+    vc_GrossPhotosynthesis = vc_GrossCO2Assimilation * 30.0 / 44.0;
 
-  // Calculation of photosynthesis rate from [kg CO2 ha-1 d-1]  to [mol m-2 s-1] or [cm3 cm-2 s-1]
-  vc_GrossPhotosynthesis_mol = vc_GrossCO2Assimilation * 22414.0 / (10.0 * 3600.0 * 24.0 * 44.0);
-  vc_GrossPhotosynthesisReference_mol = vc_GrossCO2AssimilationReference * 22414.0 / (10.0 * 3600.0 * 24.0 * 44.0);
+    // Calculation of photosynthesis rate from [kg CO2 ha-1 d-1]  to [mol m-2 s-1] or [cm3 cm-2 s-1]
+    vc_GrossPhotosynthesis_mol = vc_GrossCO2Assimilation * 22414.0 / (10.0 * 3600.0 * 24.0 * 44.0);
+    vc_GrossPhotosynthesisReference_mol = vc_GrossCO2AssimilationReference * 22414.0 / (10.0 * 3600.0 * 24.0 * 44.0);
 
-  // Converting photosynthesis rate from [kg CO2 ha leaf-1 d-1] to [kg CH2O ha-1  d-1]
-  vc_Assimilates = vc_GrossCO2Assimilation * 30.0 / 44.0;
+    // Converting photosynthesis rate from [kg CO2 ha leaf-1 d-1] to [kg CH2O ha-1  d-1]
+    vc_Assimilates = vc_GrossCO2Assimilation * 30.0 / 44.0;
 
-  // reduction value for assimilate amount to simulate field conditions;
-  vc_Assimilates *= pc_FieldConditionModifier;
+    // reduction value for assimilate amount to simulate field conditions;
+    vc_Assimilates *= pc_FieldConditionModifier;
 
-  // reduction value for assimilate amount to simulate frost damage;
-  vc_Assimilates *= vc_CropFrostRedux;
+    // reduction value for assimilate amount to simulate frost damage;
+    vc_Assimilates *= vc_CropFrostRedux;
 
-  //MP: added reduction value for assimilate amount to simulate waterlogging;
-  vc_Assimilates *= vc_OxygenDeficit;
+    //MP: added reduction value for assimilate amount to simulate waterlogging;
+    vc_Assimilates *= vc_OxygenDeficit;
 
-  if (vc_TranspirationDeficit < vc_DroughtStressThreshold) {//MP: Access point for drought optimisation
-      vc_Assimilates = vc_Assimilates * vc_TranspirationDeficit;  // vc_DroughtStressThreshold; // MP:changed to exclude division
-  }
+    if (vc_TranspirationDeficit < vc_DroughtStressThreshold) {//MP: Access point for drought optimisation
+        vc_Assimilates = vc_Assimilates * vc_TranspirationDeficit;  // vc_DroughtStressThreshold; // MP:changed to exclude division
+    }
 
-  vc_GrossAssimilates = vc_Assimilates;
+    vc_GrossAssimilates = vc_Assimilates;
 
-  // ########################################################################
-  // #                AGROSIM                 #
-  // ########################################################################
+    // ########################################################################
+    // #                AGROSIM                 #
+    // ########################################################################
 
-  // AGROSIM night and day temperatures
-  double vc_PhotoTemperature, vc_NightTemperature;
-  if (cropPs.__enable_hourly_photosynthesis__ && cropPs.__enable_hourly_respiration__) {
-    vc_PhotoTemperature = vc_PhotoTemperature_;
-    vc_NightTemperature = vc_NightTemperature_;
-    vc_PhotoperiodicDaylength = vc_PhotoperiodicDaylength_;
-  } else {
-    vc_PhotoTemperature = vw_MaxAirTemperature - ((vw_MaxAirTemperature - vw_MinAirTemperature) / 4.0);
-    vc_NightTemperature = vw_MinAirTemperature + ((vw_MaxAirTemperature - vw_MinAirTemperature) / 4.0);
-  }
+    // AGROSIM night and day temperatures
+    double vc_PhotoTemperature, vc_NightTemperature;
+    if (cropPs.__enable_hourly_photosynthesis__ && cropPs.__enable_hourly_respiration__) {
+      vc_PhotoTemperature = vc_PhotoTemperature_;
+      vc_NightTemperature = vc_NightTemperature_;
+      vc_PhotoperiodicDaylength = vc_PhotoperiodicDaylength_;
+    } else {
+      vc_PhotoTemperature = vw_MaxAirTemperature - ((vw_MaxAirTemperature - vw_MinAirTemperature) / 4.0);
+      vc_NightTemperature = vw_MinAirTemperature + ((vw_MaxAirTemperature - vw_MinAirTemperature) / 4.0);
+    }
 
-  double vc_MaintenanceRespirationSum = 0.0;
-  // AGOSIM night and day maintenance and growth respiration
-  for (int i_Organ = 0; i_Organ < pc_NumberOfOrgans; i_Organ++) {
-    vc_MaintenanceRespirationSum +=
-        vc_OrganGreenBiomass[i_Organ] * pc_OrganMaintenanceRespiration[i_Organ]; // [kg CH2O ha-1]
-    // * vc_ActiveFraction[i_Organ]; wenn nicht schon durch acc dead matter abgedeckt
-  }
-
-  double vc_NormalisedDayLength = 2.0 - (vc_PhotoperiodicDaylength / 12.0);
-
-  double vc_PhotoMaintenanceRespiration = vc_MaintenanceRespirationSum * pow(2.0,
-                                                                             (pc_MaintenanceRespirationParameter_1 *
-                                                                              (vc_PhotoTemperature -
-                                                                               pc_MaintenanceRespirationParameter_2))) *
-                                          (2.0 - vc_NormalisedDayLength); // @todo: [g m-2] --> [kg ha-1]
-
-  double vc_DarkMaintenanceRespiration = vc_MaintenanceRespirationSum * pow(2.0, (pc_MaintenanceRespirationParameter_1 *
-                                                                                  (vc_NightTemperature -
-                                                                                   pc_MaintenanceRespirationParameter_2))) *
-                                         vc_NormalisedDayLength; // @todo: [g m-2] --> [kg ha-1]
-
-  vc_MaintenanceRespirationAS = vc_PhotoMaintenanceRespiration + vc_DarkMaintenanceRespiration; // [kg CH2O ha-1]
-
-  vc_Assimilates -= vc_PhotoMaintenanceRespiration + vc_DarkMaintenanceRespiration; // [kg CH2O ha-1]
-
-  double vc_GrowthRespirationSum = 0.0;
-
-  if (vc_Assimilates > 0) {
+    double vc_MaintenanceRespirationSum = 0.0;
+    // AGOSIM night and day maintenance and growth respiration
     for (int i_Organ = 0; i_Organ < pc_NumberOfOrgans; i_Organ++) {
-      vc_GrowthRespirationSum += pc_AssimilatePartitioningCoeff[vc_DevelopmentalStage][i_Organ] * vc_Assimilates *
-                                 pc_OrganGrowthRespiration[i_Organ];
+      vc_MaintenanceRespirationSum +=
+          vc_OrganGreenBiomass[i_Organ] * pc_OrganMaintenanceRespiration[i_Organ]; // [kg CH2O ha-1]
+      // * vc_ActiveFraction[i_Organ]; wenn nicht schon durch acc dead matter abgedeckt
     }
-  }
 
-  double vc_PhotoGrowthRespiration = 0.0;
-  if (vc_Assimilates > 0.0) {
-    vc_PhotoGrowthRespiration = vc_GrowthRespirationSum * pow(2.0, (pc_GrowthRespirationParameter_1 *
-                                                                    (vc_PhotoTemperature -
-                                                                     pc_GrowthRespirationParameter_2))) *
-                                (2.0 - vc_NormalisedDayLength); // [kg CH2O ha-1]
+    double vc_NormalisedDayLength = 2.0 - (vc_PhotoperiodicDaylength / 12.0);
 
-    if (vc_Assimilates > vc_PhotoGrowthRespiration) {
-      vc_Assimilates -= vc_PhotoGrowthRespiration;
+    double vc_PhotoMaintenanceRespiration = vc_MaintenanceRespirationSum * pow(2.0,
+                                                                              (pc_MaintenanceRespirationParameter_1 *
+                                                                                (vc_PhotoTemperature -
+                                                                                pc_MaintenanceRespirationParameter_2))) *
+                                            (2.0 - vc_NormalisedDayLength); // @todo: [g m-2] --> [kg ha-1]
+
+    double vc_DarkMaintenanceRespiration = vc_MaintenanceRespirationSum * pow(2.0, (pc_MaintenanceRespirationParameter_1 *
+                                                                                    (vc_NightTemperature -
+                                                                                    pc_MaintenanceRespirationParameter_2))) *
+                                          vc_NormalisedDayLength; // @todo: [g m-2] --> [kg ha-1]
+
+    vc_MaintenanceRespirationAS = vc_PhotoMaintenanceRespiration + vc_DarkMaintenanceRespiration; // [kg CH2O ha-1]
+
+    vc_Assimilates -= vc_PhotoMaintenanceRespiration + vc_DarkMaintenanceRespiration; // [kg CH2O ha-1]
+
+    double vc_GrowthRespirationSum = 0.0;
+
+    if (vc_Assimilates > 0) {
+      for (int i_Organ = 0; i_Organ < pc_NumberOfOrgans; i_Organ++) {
+        vc_GrowthRespirationSum += pc_AssimilatePartitioningCoeff[vc_DevelopmentalStage][i_Organ] * vc_Assimilates *
+                                  pc_OrganGrowthRespiration[i_Organ];
+      }
+    }
+
+    double vc_PhotoGrowthRespiration = 0.0;
+    if (vc_Assimilates > 0.0) {
+      vc_PhotoGrowthRespiration = vc_GrowthRespirationSum * pow(2.0, (pc_GrowthRespirationParameter_1 *
+                                                                      (vc_PhotoTemperature -
+                                                                      pc_GrowthRespirationParameter_2))) *
+                                  (2.0 - vc_NormalisedDayLength); // [kg CH2O ha-1]
+
+      if (vc_Assimilates > vc_PhotoGrowthRespiration) {
+        vc_Assimilates -= vc_PhotoGrowthRespiration;
+      } else {
+        vc_PhotoGrowthRespiration = vc_Assimilates; // in this case the plant will be restricted in growth!
+        vc_Assimilates = 0.0;
+      }
+    }
+
+    double vc_DarkGrowthRespiration = 0.0;
+    if (vc_Assimilates > 0.0) {
+      vc_DarkGrowthRespiration = vc_GrowthRespirationSum * pow(2.0, (pc_GrowthRespirationParameter_1 *
+                                                                    (vc_PhotoTemperature -                 //FS: Why is vc_PhotoTemperature (= daytime temperature) used here? Is this intended?
+                                                                      pc_GrowthRespirationParameter_2))) *
+                                vc_NormalisedDayLength; // [kg CH2O ha-1]
+
+      if (vc_Assimilates > vc_DarkGrowthRespiration) {
+        vc_Assimilates -= vc_DarkGrowthRespiration;
+      } else {
+        vc_DarkGrowthRespiration = vc_Assimilates; // in this case the plant will be restricted in growth!
+        vc_Assimilates = 0.0;
+      }
+    }
+    vc_GrowthRespirationAS = vc_PhotoGrowthRespiration + vc_DarkGrowthRespiration; // [kg CH2O ha-1]
+    vc_TotalRespired = vc_GrossAssimilates - vc_Assimilates;             // [kg CH2O ha-1]
+
+    // to reactivate HERMES algorithms, needs to be vc_NetPhotosynthesis
+    // used instead of  vc_Assimilates in the subsequent methods
+    // #########################################################################
+    // HERMES calculation of maintenance respiration in dependence of temperature
+
+    // old TEFF
+    double vc_MaintenanceTemperatureDependency = pow(2.0, (0.1 * vw_MeanAirTemperature - 2.5));
+
+    // old MAINTS
+    double vc_MaintenanceRespiration = 0.0;
+    for (int i_Organ = 0; i_Organ < pc_NumberOfOrgans; i_Organ++) {
+      vc_MaintenanceRespiration += vc_OrganGreenBiomass[i_Organ] * pc_OrganMaintenanceRespiration[i_Organ];
+    }
+
+    if (vc_GrossPhotosynthesis < (vc_MaintenanceRespiration * vc_MaintenanceTemperatureDependency)) {
+      vc_NetMaintenanceRespiration = vc_GrossPhotosynthesis;
     } else {
-      vc_PhotoGrowthRespiration = vc_Assimilates; // in this case the plant will be restricted in growth!
-      vc_Assimilates = 0.0;
+      vc_NetMaintenanceRespiration = vc_MaintenanceRespiration * vc_MaintenanceTemperatureDependency;
+    }
+
+    if (vw_MeanAirTemperature < pc_MinimumTemperatureForAssimilation) {
+      vc_GrossPhotosynthesis = vc_NetMaintenanceRespiration;
     }
   }
 
-  double vc_DarkGrowthRespiration = 0.0;
-  if (vc_Assimilates > 0.0) {
-    vc_DarkGrowthRespiration = vc_GrowthRespirationSum * pow(2.0, (pc_GrowthRespirationParameter_1 *
-                                                                   (vc_PhotoTemperature -                 //FS: Why is vc_PhotoTemperature (= daytime temperature) used here? Is this intended?
-                                                                    pc_GrowthRespirationParameter_2))) *
-                               vc_NormalisedDayLength; // [kg CH2O ha-1]
-
-    if (vc_Assimilates > vc_DarkGrowthRespiration) {
-      vc_Assimilates -= vc_DarkGrowthRespiration;
-    } else {
-      vc_DarkGrowthRespiration = vc_Assimilates; // in this case the plant will be restricted in growth!
-      vc_Assimilates = 0.0;
-    }
-  }
-  vc_GrowthRespirationAS = vc_PhotoGrowthRespiration + vc_DarkGrowthRespiration; // [kg CH2O ha-1]
-  vc_TotalRespired = vc_GrossAssimilates - vc_Assimilates;             // [kg CH2O ha-1]
-
-  // to reactivate HERMES algorithms, needs to be vc_NetPhotosynthesis
-  // used instead of  vc_Assimilates in the subsequent methods
-  // #########################################################################
-  // HERMES calculation of maintenance respiration in dependence of temperature
-
-  // old TEFF
-  double vc_MaintenanceTemperatureDependency = pow(2.0, (0.1 * vw_MeanAirTemperature - 2.5));
-
-  // old MAINTS
-  double vc_MaintenanceRespiration = 0.0;
-  for (int i_Organ = 0; i_Organ < pc_NumberOfOrgans; i_Organ++) {
-    vc_MaintenanceRespiration += vc_OrganGreenBiomass[i_Organ] * pc_OrganMaintenanceRespiration[i_Organ];
-  }
-
-  if (vc_GrossPhotosynthesis < (vc_MaintenanceRespiration * vc_MaintenanceTemperatureDependency)) {
-    vc_NetMaintenanceRespiration = vc_GrossPhotosynthesis;
-  } else {
-    vc_NetMaintenanceRespiration = vc_MaintenanceRespiration * vc_MaintenanceTemperatureDependency;
-  }
-
-  if (vw_MeanAirTemperature < pc_MinimumTemperatureForAssimilation) {
-    vc_GrossPhotosynthesis = vc_NetMaintenanceRespiration;
-  }
 }
 
 /**
@@ -3010,6 +3179,67 @@ void CropModule::fc_HeatStressImpact(double vw_MaxAirTemperature,
     vc_TotalCropHeatImpact += vc_CropHeatImpact * vc_DailyFloweringRate;
 
     vc_DaysAfterBeginFlowering += 1;
+  }
+
+  if (vc_CurrentTotalTemperatureSum >= pc_EndSensitivePhaseHeatStress || vc_FractionOpenFlowers > 0.999999) {
+    if (vc_TotalCropHeatImpact < vc_CropHeatRedux) {
+      vc_CropHeatRedux = vc_TotalCropHeatImpact;
+    }
+  }
+}
+
+/**
+ * @brief Heat stress impact (hourly)
+ *
+ * @param vc_PhotoTemperature
+ * @param vc_CurrentTotalTemperatureSum
+ */
+double CropModule::fc_HeatStressImpact_hourly(double vc_PhotoTemperature, int vc_DaysAfterBeginFlowering_) {
+  // AGROSIM night and day temperatures
+  double vc_FractionOpenFlowers = 0.0;
+  double vc_YesterdaysFractionOpenFlowers = 0.0;
+
+  if ((pc_BeginSensitivePhaseHeatStress == 0.0) && (pc_EndSensitivePhaseHeatStress == 0.0)) {
+    vc_TotalCropHeatImpact = 1.0;
+  }
+
+  if ((vc_CurrentTotalTemperatureSum >= pc_BeginSensitivePhaseHeatStress) &&
+      vc_CurrentTotalTemperatureSum < pc_EndSensitivePhaseHeatStress) {
+
+    // Crop heat redux: Challinor et al. (2005): Simulation of the impact of high
+    // temperature stress on annual crop yields. Agricultural and Forest
+    // Meteorology 135, 180 - 189.
+
+    double vc_CropHeatImpact = 1.0 - ((vc_PhotoTemperature - pc_CriticalTemperatureHeatStress) /
+                                      (pc_LimitingTemperatureHeatStress - pc_CriticalTemperatureHeatStress));
+
+    if (vc_CropHeatImpact > 1.0) {
+      vc_CropHeatImpact = 1.0;
+    }
+
+    if (vc_CropHeatImpact < 0.0) {
+      vc_CropHeatImpact = 0.0;
+    }
+
+    // Fraction open flowers from Moriondo et al. (2011): Climate change impact
+    // assessment: the role of climate extremes in crop yield simulation. Climatic
+    // Change 104 (3-4), 679-701.
+
+    vc_FractionOpenFlowers = 1.0 / (1.0 + ((1.0 / 0.015) - 1.0) * exp(-1.4 * vc_DaysAfterBeginFlowering_));
+    if (vc_DaysAfterBeginFlowering_ > 0) {
+      vc_YesterdaysFractionOpenFlowers =
+          1.0 / (1.0 + ((1.0 / 0.015) - 1.0) * exp(-1.4 * (vc_DaysAfterBeginFlowering_ - 1)));
+    } else {
+      vc_YesterdaysFractionOpenFlowers = 0.0;
+    }
+    double vc_DailyFloweringRate = vc_FractionOpenFlowers - vc_YesterdaysFractionOpenFlowers;
+
+    // Total effect: Challinor et al. (2005): Simulation of the impact of high
+    // temperature stress on annual crop yields. Agricultural and Forest
+    // Meteorology 135, 180 - 189.
+    vc_TotalCropHeatImpact += vc_CropHeatImpact * vc_DailyFloweringRate;
+
+    // vc_DaysAfterBeginFlowering += 1;
   }
 
   if (vc_CurrentTotalTemperatureSum >= pc_EndSensitivePhaseHeatStress || vc_FractionOpenFlowers > 0.999999) {
@@ -3088,6 +3318,77 @@ void CropModule::fc_FrostKill(double vw_MaxAirTemperature, double vw_MinAirTempe
   if (vc_CrownTemperature < vc_LT50) vc_CropFrostRedux *= 0.5;
 }
 
+
+/**
+ * @brief Frost kill
+ *
+ * @param vc_CrownTemperature
+ */
+
+double CropModule::fc_FrostKill_hourly(double vc_CrownTemperature) {
+  // ************************************************************
+  // ** Fowler, D.B., B.M. Byrns, K.J. Greer. 2014. Overwinter **
+  // **	Low-Temperature Responses of Cereals: Analyses and   **
+  // **	Simulation. Crop Sci. 54:2395–2405.          **
+  // ************************************************************
+
+  double vc_LT50old = vc_LT50;
+  vc_LT50M = min(vc_LT50, vc_LT50M);
+
+  // double vc_NightTemperature = (cropPs.__enable_hourly_photosynthesis__ && cropPs.__enable_hourly_respiration__) ? vc_NightTemperature_ : vw_MinAirTemperature + ((vw_MaxAirTemperature - vw_MinAirTemperature) / 4.0); // FS: added option to use the NightTemperature aggregated from the hourly photosynthesis model
+  // double vc_CrownTemperature = vc_NightTemperature * 0.8;
+  auto snowDepthAndTempUnderSnow = _getSnowDepthAndCalcTempUnderSnow(vc_CrownTemperature);
+  if (vc_DevelopmentalStage <= 1) {
+    vc_CrownTemperature =
+        (3.0 * soilColumn.vt_SoilSurfaceTemperature + 2.0 * soilColumn[0].get_Vs_SoilTemperature()) / 5.0;
+  } else if (snowDepthAndTempUnderSnow.first > 0.0) {
+    vc_CrownTemperature = snowDepthAndTempUnderSnow.second;
+  }
+
+  double vc_FrostHardening = 0.0;
+  double vc_ThresholdInductionTemperature = 3.72135 - 0.401124 * pc_LT50cultivar;
+  if ((vc_VernalisationFactor < 1.0) && (vc_CrownTemperature < vc_ThresholdInductionTemperature)) {
+    vc_FrostHardening =
+        pc_FrostHardening * (vc_ThresholdInductionTemperature - vc_CrownTemperature) * (vc_LT50old - pc_LT50cultivar);
+  }
+
+  double vc_FrostDehardening = 0.0;
+  double vc_DoubleRidgeCounter = vc_CurrentTemperatureSum[1] / pc_StageTemperatureSum[1];
+  double vc_VRTFactor = 1 / (1 + (exp(80.0 * (vc_DoubleRidgeCounter - 0.9))));
+  if ((vc_DoubleRidgeCounter < 1.0 && vc_CrownTemperature >= vc_ThresholdInductionTemperature) ||
+      vc_DoubleRidgeCounter >= 1.0) {
+    vc_FrostDehardening = pc_FrostDehardening / (1.0 + exp(4.35 - 0.28 * vc_CrownTemperature));
+  } else if (vc_DoubleRidgeCounter < 1.0 && -4.0 <= vc_CrownTemperature &&
+             vc_CrownTemperature < vc_ThresholdInductionTemperature) {
+    vc_FrostDehardening = (1 - vc_VRTFactor) * pc_FrostDehardening / (1.0 + exp(4.35 - 0.28 * vc_CrownTemperature));
+  }
+
+  // double vc_LowTemperatureExposure = 0.0;
+  // if (vc_CrownTemperature < -3.0 && (vc_LT50M - vc_CrownTemperature) > -12.0)
+  //{
+  //	vc_LowTemperatureExposure = -(vc_LT50M - vc_CrownTemperature) /
+  //		exp(-pc_LowTemperatureExposure * (vc_LT50M - vc_CrownTemperature) - 3.74);
+  // }
+
+  double vc_SnowDepthFactor = 1.0;
+  if (soilColumn.vm_SnowDepth <= 125.0) vc_SnowDepthFactor = soilColumn.vm_SnowDepth / 125.0;
+
+  double vc_RespirationFactor = (exp(0.84 + 0.051 * vc_CrownTemperature) - 2.0) / 1.85;
+  double vc_RespiratoryStress = pc_RespiratoryStress * vc_RespirationFactor * vc_SnowDepthFactor;
+
+  // vc_LT50 = vc_LT50old - vc_FrostHardening + vc_FrostDehardening + vc_LowTemperatureExposure + vc_RespiratoryStress;
+  vc_LT50 = vc_LT50old - vc_FrostHardening + vc_FrostDehardening + vc_RespiratoryStress;
+  // cout << "CrownT: " << vc_CrownTemperature
+  //	<< " LT50: " << vc_LT50 << " LT50old: " << vc_LT50old << " LT50M: " << vc_LT50M << " LT50c: " << pc_LT50cultivar
+  //	<< " FH: " << vc_FrostHardening << " FDH: " << vc_FrostDehardening
+  //	/*<< " LTE: " << vc_LowTemperatureExposure*/ << " RS: " << vc_RespiratoryStress << endl;
+
+  if (vc_LT50 > -3.0) vc_LT50 = -3.0;
+  if (vc_CrownTemperature < vc_LT50) vc_CropFrostRedux *= 0.5;
+
+  return vc_CropFrostRedux;
+}
+
 /**
  * @brief Drought impact on crop fertility
  */
@@ -3112,6 +3413,35 @@ void CropModule::fc_DroughtImpactOnFertility() {
   } else {
     vc_DroughtImpactOnFertility = 1.0;
   }
+}
+
+/**
+ * @brief Drought impact on crop fertility
+ */
+double CropModule::fc_DroughtImpactOnFertility_hourly(double vc_TranspirationDeficit_hourly, double vc_OxygenDeficit_hourly) {
+  if (vc_TranspirationDeficit_hourly < 0.0) vc_TranspirationDeficit_hourly = 0.0;
+
+  double vc_DroughtImpactOnFertility_hourly;
+
+  // Fertility of the crop is reduced in cases of severe drought during bloom
+  if ((vc_TranspirationDeficit_hourly < (pc_DroughtImpactOnFertilityFactor *
+                                  pc_DroughtStressThreshold[vc_DevelopmentalStage])) &&
+      (pc_AssimilatePartitioningCoeff[vc_DevelopmentalStage][vc_StorageOrgan] > 0.0)) {
+
+    double vc_TranspirationDeficitHelper = vc_TranspirationDeficit_hourly /
+                                           (pc_DroughtImpactOnFertilityFactor *
+                                            pc_DroughtStressThreshold[vc_DevelopmentalStage]);
+
+    if (vc_OxygenDeficit_hourly < 1.0) {
+      vc_DroughtImpactOnFertility_hourly = 1.0;
+    } else {
+      vc_DroughtImpactOnFertility_hourly =
+          1.0 - ((1.0 - vc_TranspirationDeficitHelper) * (1.0 - vc_TranspirationDeficitHelper));
+    }
+  } else {
+    vc_DroughtImpactOnFertility_hourly = 1.0;
+  }
+  return vc_DroughtImpactOnFertility_hourly;
 }
 
 /**
@@ -3160,6 +3490,54 @@ void CropModule::fc_CropNitrogen() {
 }
 
 /**
+ * @brief Crop Nitrogen
+ */
+pair<double, double> CropModule::fc_CropNitrogen_hourly() {
+  vc_CriticalNConcentration = pc_NConcentrationPN *
+                              (1.0 + (pc_NConcentrationB0 *
+                                      exp(-0.26 * (vc_AbovegroundBiomass + vc_BelowgroundBiomass) / 1000.0))) /
+                              100.0; // [kg ha-1 -> t ha-1]
+  vc_TargetNConcentration = vc_CriticalNConcentration * pc_LuxuryNCoeff;
+  vc_NConcentrationAbovegroundBiomassOld = vc_NConcentrationAbovegroundBiomass;
+  vc_NConcentrationRootOld = vc_NConcentrationRoot;
+
+  double rootNRedux_hourly, vc_CropNRedux_hourly;
+  if (vc_NConcentrationRoot < 0.01) {
+    if (vc_NConcentrationRoot <= 0.005) {
+      rootNRedux_hourly = 0.0;
+    } else {
+      // old WUX
+      auto rootNReduxHelper = (vc_NConcentrationRoot - 0.005) / 0.005;
+      rootNRedux_hourly = 1.0 - sqrt(1.0 - rootNReduxHelper * rootNReduxHelper);
+    }
+  } else {
+    rootNRedux_hourly = 1.0;
+  }
+
+  if (vc_NConcentrationAbovegroundBiomass < vc_CriticalNConcentration) {
+    if (vc_NConcentrationAbovegroundBiomass <= pc_MinimumNConcentration) {
+      vc_CropNRedux_hourly = 0.0;
+    } else {
+      double cropNReduxHelper = (vc_NConcentrationAbovegroundBiomass - pc_MinimumNConcentration) /
+                                (vc_CriticalNConcentration - pc_MinimumNConcentration);
+
+      // New Monica approach
+      vc_CropNRedux_hourly = 1.0 - exp(pc_MinimumNConcentration - (5.0 * cropNReduxHelper));
+
+      // Original HERMES approach
+      //vc_CropNRedux_hourly = (1.0 - exp(1.0 + 1.0 / (vc_CropNReduxHelper - 1.0))) *
+      //  (1.0 - exp(1.0 + 1.0 / (vc_CropNReduxHelper - 1.0)));
+    }
+  } else {
+    vc_CropNRedux_hourly = 1.0;
+  }
+
+  if (pc_NitrogenResponseOn == false) vc_CropNRedux_hourly = 1.0;
+
+  return make_pair(rootNRedux_hourly, vc_CropNRedux_hourly);
+}
+
+/**
  * @brief  Dry matter allocation within the crop
  *
  *  In this function the result from crop photosynthesis is allocated to the
@@ -3201,6 +3579,495 @@ void CropModule::fc_CropDryMatter(double vw_MeanAirTemperature) {
   //  Assuming that growth respiration takes 30% of total assimilation --> 0.7 [kg ha-1]
   // vc_NetPhotosynthesis = (vc_GrossPhotosynthesis - vc_NetMaintenanceRespiration + vc_ReserveAssimilatePool) * pc_GrowthRespirationRedux; // from HERMES algorithms
   vc_NetPhotosynthesis = vc_Assimilates; // from AGROSIM algorithms
+  // double stage_mobil_from_storage_coeff = 0.3;
+  double TMP_Regulatory_factor = speciesPs.pc_StageMobilFromStorageCoeff[vc_DevelopmentalStage];
+
+  if (vc_DevelopmentalStage == 1) {
+    TMP_Regulatory_factor = speciesPs.pc_StageMobilFromStorageCoeff[vc_DevelopmentalStage] * vc_KTkc;
+  }
+
+  double mobilization_from_storage =
+      vc_OrganBiomass[vc_StorageOrgan] * speciesPs.pc_StageMobilFromStorageCoeff[vc_DevelopmentalStage] * vc_KTkc;
+
+  vc_ReserveAssimilatePool = 0.0;
+
+  vc_AbovegroundBiomassOld = vc_AbovegroundBiomass;
+  vc_AbovegroundBiomass = 0.0;
+  vc_BelowgroundBiomassOld = vc_BelowgroundBiomass;
+  vc_BelowgroundBiomass = 0.0;
+  vc_TotalBiomass = 0.0;
+
+  // old PESUM [kg m-2 --> kg ha-1]
+  // vc_TotalBiomassNContent += (soilColumn.vq_CropNUptake * 10000.0) + vc_FixedN;
+
+  // Dry matter production
+  // old NRKOM
+  // double assimilate_partition_shoot = 0.7;
+  double assimilate_partition_leaf = 0.05;
+  //vector<double> dailyDeadBiomassIncrement(pc_NumberOfOrgans, 0.0);
+  double dailyDeadRootBiomassIncrement = 0.0;
+  for (int i_Organ = 0; i_Organ < pc_NumberOfOrgans; i_Organ++) {
+    vc_AssimilatePartitioningCoeffOld = pc_AssimilatePartitioningCoeff[vc_DevelopmentalStage - 1][i_Organ];
+    vc_AssimilatePartitioningCoeff = pc_AssimilatePartitioningCoeff[vc_DevelopmentalStage][i_Organ];
+
+    // Identify storage organ and reduce assimilate flux in case of heat stress //MP: this might be extended for drougth stress (see suggestions for altered assimilate allocations)
+    if (pc_StorageOrgan[i_Organ]) {
+      vc_AssimilatePartitioningCoeffOld =
+          vc_AssimilatePartitioningCoeffOld * vc_CropHeatRedux * vc_DroughtImpactOnFertility;
+      vc_AssimilatePartitioningCoeff = vc_AssimilatePartitioningCoeff * vc_CropHeatRedux * vc_DroughtImpactOnFertility;
+    }
+
+    if ((vc_CurrentTemperatureSum[vc_DevelopmentalStage] / pc_StageTemperatureSum[vc_DevelopmentalStage]) > 1) {
+      // Pflanze ist ausgewachsen
+      vc_OrganGrowthIncrement[i_Organ] = 0.0;
+      vc_OrganSenescenceIncrement[i_Organ] = 0.0;
+      if (pc_Perennial) vc_GrowthCycleEnded = true;
+    } else {
+      // test if there is a positive balance of produced assimilates
+      // if vc_NetPhotosynthesis is negative, the crop needs more for
+      // maintenance than for building new biomass
+      if (vc_NetPhotosynthesis < 0.0) {
+        // reduce biomass from leaf and shoot because of negative assimilate //MP: what is the effect on roots here?
+        //! TODO: hard coded organ ids; must be more generalized because in database organ_ids can be mixed
+        // vc_OrganBiomass[i_Organ];
+
+        if (i_Organ == OId::LEAF) { // leaf
+
+          double incr = assimilate_partition_leaf * vc_NetPhotosynthesis;
+          if (fabs(incr) <= vc_OrganBiomass[i_Organ]) {
+            debug() << "LEAF - Reducing organ biomass - default case ("
+                    << vc_OrganBiomass[i_Organ] + vc_OrganGrowthIncrement[i_Organ] << ")" << endl;
+            vc_OrganGrowthIncrement[i_Organ] = incr;
+          } else {
+            // temporary hack because complex algorithm produces questionable results
+            debug() << "LEAF - Not enough biomass for reduction - Reducing only what is available " << endl;
+            vc_OrganGrowthIncrement[i_Organ] = (-1) * vc_OrganBiomass[i_Organ];
+            //            debug() << "LEAF - Not enough biomass for reduction; Need to calculate new partition coefficient" << endl;
+            //            // calculate new partition coefficient to detect, how much of organ biomass
+            //            // can be reduced
+            //            assimilate_partition_leaf = fabs(vc_OrganBiomass[i_Organ] / vc_NetPhotosynthesis);
+            //            assimilate_partition_shoot = 1.0 - assimilate_partition_leaf;
+            //            debug() << "LEAF - New Partition: " << assimilate_partition_leaf << endl;
+            //
+            //            // reduce biomass for leaf
+            //            incr = assimilate_partition_leaf * vc_NetPhotosynthesis; // should be negative, therefor the addition
+            //            vc_OrganGrowthIncrement[i_Organ] = incr;
+            //            debug() << "LEAF - Reducing organ by " << incr << " (" << vc_OrganBiomass[i_Organ] + vc_OrganGrowthIncrement[i_Organ] << ")"<< endl;
+          }
+        } else if (i_Organ == OId::SHOOT) { // shoot
+
+          double incr = assimilate_partition_leaf * vc_NetPhotosynthesis; // should be negative
+
+          if (fabs(incr) <= vc_OrganBiomass[i_Organ]) {
+            vc_OrganGrowthIncrement[i_Organ] = incr;
+            debug() << "SHOOT - Reducing organ biomass - default case ("
+                    << vc_OrganBiomass[i_Organ] + vc_OrganGrowthIncrement[i_Organ] << ")" << endl;
+          } else {
+            // temporary hack because complex algorithm produces questionable results
+            debug() << "SHOOT - Not enough biomass for reduction - Reducing only what is available " << endl;
+            vc_OrganGrowthIncrement[i_Organ] = (-1) * vc_OrganBiomass[i_Organ];
+            //            debug() << "SHOOT - Not enough biomass for reduction; Need to calculate new partition coefficient" << endl;
+            //
+            //            assimilate_partition_shoot = fabs(vc_OrganBiomass[i_Organ] / vc_NetPhotosynthesis);
+            //            assimilate_partition_leaf = 1.0 - assimilate_partition_shoot;
+            //            debug() << "SHOOT - New Partition: " << assimilate_partition_shoot << endl;
+            //
+            //            incr = assimilate_partition_shoot * vc_NetPhotosynthesis;
+            //            vc_OrganGrowthIncrement[i_Organ] = incr;
+            //            debug() << "SHOOT - Reducing organ (" << vc_OrganBiomass[i_Organ] + vc_OrganGrowthIncrement[i_Organ] << ")"<< endl;
+            //
+            //            // test if there is the possibility to reduce biomass of leaf
+            //            // for remaining assimilates
+            //            incr = assimilate_partition_leaf * vc_NetPhotosynthesis;
+            //            double available_leaf_biomass = vc_OrganBiomass[LEAF] + vc_OrganGrowthIncrement[LEAF];
+            //            if (incr<available_leaf_biomass) {
+            //              // leaf biomass is big enough, so reduce biomass furthermore
+            //              vc_OrganGrowthIncrement[LEAF] += incr; // should be negative, therefor the addition
+            //              debug() << "LEAF - Reducing leaf biomasse further (" << vc_OrganBiomass[LEAF] + vc_OrganGrowthIncrement[LEAF] << ")"<< endl;
+            //            } else {
+            //              // worst case - there is not enough biomass available to reduce
+            //              // maintenaince respiration requires more assimilates that can be
+            //              // provided by plant itselft
+            //              // now the plant is dying - sorry
+            //              dyingOut = true;
+            //            }
+          }
+        } else {
+          // root or storage organ - do nothing in case of negative photosynthesis //MP: for roots, this appears to be questionable...
+          vc_OrganGrowthIncrement[i_Organ] = 0;
+        }
+      } else { // if (vc_NetPhotosynthesis >= 0.0) {
+        vc_OrganGrowthIncrement[i_Organ] = vc_NetPhotosynthesis *
+                                           (vc_AssimilatePartitioningCoeffOld +
+                                            ((vc_AssimilatePartitioningCoeff - vc_AssimilatePartitioningCoeffOld) *
+                                             (vc_CurrentTemperatureSum[vc_DevelopmentalStage] /
+                                              pc_StageTemperatureSum[vc_DevelopmentalStage]))) *
+                                           vc_CropNRedux; // [kg CH2O ha-1]
+        bool _mobilization_from_storage = true;
+
+        if (_mobilization_from_storage) {
+          if (i_Organ != vc_StorageOrgan) {
+            vc_OrganGrowthIncrement[i_Organ] += mobilization_from_storage *
+                                                (vc_AssimilatePartitioningCoeffOld +
+                                                 ((vc_AssimilatePartitioningCoeff - vc_AssimilatePartitioningCoeffOld) *
+                                                  (vc_CurrentTemperatureSum[vc_DevelopmentalStage] /
+                                                   pc_StageTemperatureSum[vc_DevelopmentalStage]))) * vc_CropNRedux;
+          } else {
+            vc_OrganGrowthIncrement[i_Organ] -= mobilization_from_storage * vc_CropNRedux;
+            vc_OrganGrowthIncrement[i_Organ] += mobilization_from_storage *
+                                                (vc_AssimilatePartitioningCoeffOld +
+                                                 ((vc_AssimilatePartitioningCoeff - vc_AssimilatePartitioningCoeffOld) *
+                                                  (vc_CurrentTemperatureSum[vc_DevelopmentalStage] /
+                                                   pc_StageTemperatureSum[vc_DevelopmentalStage]))) * vc_CropNRedux;
+          }
+        }
+      }
+      vc_OrganSenescenceIncrement[i_Organ] =
+          vc_OrganGreenBiomass[i_Organ] * (pc_OrganSenescenceRate[vc_DevelopmentalStage - 1][i_Organ] +
+                                           ((pc_OrganSenescenceRate[vc_DevelopmentalStage][i_Organ] -
+                                             pc_OrganSenescenceRate[vc_DevelopmentalStage - 1][i_Organ]) *
+                                            (vc_CurrentTemperatureSum[vc_DevelopmentalStage] /
+                                             pc_StageTemperatureSum[vc_DevelopmentalStage]))); // [kg CH2O ha-1]
+    }
+
+    vc_OrganBiomass[i_Organ] += vc_OrganGrowthIncrement[i_Organ] * vc_TimeStep; // [kg CH2O ha-1]
+    if (i_Organ == vc_StorageOrgan) {
+      vc_OrganDeadBiomass[i_Organ] += vc_OrganSenescenceIncrement[i_Organ] * vc_TimeStep; // [kg CH2O ha-1]
+    } else {
+      // root, shoot, leaf
+      const double reallocationRate = pc_AssimilateReallocation * vc_OrganSenescenceIncrement[i_Organ] * vc_TimeStep; // [kg CH2O ha-1]
+      vc_OrganBiomass[vc_StorageOrgan] += reallocationRate;
+      double dailyDeadBiomassIncrement = vc_OrganSenescenceIncrement[i_Organ] - reallocationRate;
+      //v me
+      //vc_OrganBiomass[i_Organ] -= reallocationRate;
+      //vc_OrganDeadBiomass[i_Organ] += dailyDeadBiomassIncrement; // [kg CH2O ha-1]
+      //^ me
+      if (i_Organ == OId::ROOT) {
+        vc_OrganBiomass[OId::ROOT] -= vc_OrganSenescenceIncrement[OId::ROOT];
+        //v me
+        //dailyDeadBiomassIncrement = vc_OrganSenescenceIncrement[i_Organ];
+        //vc_TotalBiomassNContent -= dailyDeadBiomassIncrement * vc_NConcentrationRoot;
+        //vc_OrganDeadBiomass[OId::ROOT] += dailyDeadBiomassIncrement;
+        //dailyDeadRootBiomassIncrement = dailyDeadBiomassIncrement;
+        //^ me
+        vc_TotalBiomassNContent -= dailyDeadBiomassIncrement * vc_NConcentrationRoot;
+        dailyDeadRootBiomassIncrement = dailyDeadBiomassIncrement;
+      } else {
+        // shoot or leaf
+        vc_OrganBiomass[i_Organ] -= reallocationRate;
+        vc_OrganDeadBiomass[i_Organ] += dailyDeadBiomassIncrement; // [kg CH2O ha-1]
+      }
+    }
+
+    vc_OrganGreenBiomass[i_Organ] = vc_OrganBiomass[i_Organ] - vc_OrganDeadBiomass[i_Organ]; // [kg CH2O ha-1]
+    if (vc_OrganGreenBiomass[i_Organ] < 0.0) {
+      vc_OrganDeadBiomass[i_Organ] = vc_OrganBiomass[i_Organ];
+      vc_OrganGreenBiomass[i_Organ] = 0.0;
+    }
+
+    if (pc_AbovegroundOrgan[i_Organ]) {
+      vc_AbovegroundBiomass += vc_OrganBiomass[i_Organ]; // [kg CH2O ha-1]
+    } else if (i_Organ != OId::ROOT) {
+      vc_BelowgroundBiomass += vc_OrganBiomass[i_Organ];
+    } // [kg CH2O ha-1]
+
+    vc_TotalBiomass += vc_OrganBiomass[i_Organ]; // [kg CH2O ha-1]
+  }
+
+  /** @todo N redux noch ausgeschaltet */
+  vc_ReserveAssimilatePool = 0.0; //+= vc_NetPhotosynthesis * (1.0 - vc_CropNRedux);
+  vc_RootBiomassOld = vc_RootBiomass;
+  vc_RootBiomass = vc_OrganBiomass[OId::ROOT]; // [kg CH2O ha-1]
+
+  if (vc_DevelopmentalStage > 0) {
+    vc_MaxRootNConcentration = pc_StageMaxRootNConcentration[vc_DevelopmentalStage - 1] -
+                               (pc_StageMaxRootNConcentration[vc_DevelopmentalStage - 1] -
+                                pc_StageMaxRootNConcentration[vc_DevelopmentalStage]) *
+                               vc_CurrentTemperatureSum[vc_DevelopmentalStage] /
+                               pc_StageTemperatureSum[vc_DevelopmentalStage]; //[kg kg-1]
+  } else {
+    vc_MaxRootNConcentration = pc_StageMaxRootNConcentration[vc_DevelopmentalStage];
+  }
+
+  vc_CropNDemand =
+      ((vc_TargetNConcentration * vc_AbovegroundBiomass) + (vc_RootBiomass * vc_MaxRootNConcentration) +
+       (vc_TargetNConcentration * vc_BelowgroundBiomass / pc_ResidueNRatio) - vc_TotalBiomassNContent) *
+      vc_TimeStep; // [kg ha-1]
+
+  vc_NConcentrationOptimum =
+      ((vc_TargetNConcentration - (vc_TargetNConcentration - vc_CriticalNConcentration) * 0.15) *
+       vc_AbovegroundBiomass +
+       (vc_TargetNConcentration - (vc_TargetNConcentration - vc_CriticalNConcentration) * 0.15) *
+       vc_BelowgroundBiomass / pc_ResidueNRatio + (vc_RootBiomass * vc_MaxRootNConcentration) -
+       vc_TotalBiomassNContent) * vc_TimeStep; // [kg ha-1]
+
+  if (vc_CropNDemand > (pc_MaxCropNDemand * vc_TimeStep)) {
+    // Not more than 6kg N per day to be taken up.
+    vc_CropNDemand = pc_MaxCropNDemand * vc_TimeStep;
+  }
+
+  if (vc_CropNDemand < 0) vc_CropNDemand = 0.0;
+
+  if (vc_RootBiomass < vc_RootBiomassOld) {
+    /** @todo: Claas: Macht die Bedingung hier Sinn? Hat sich die Wurzel wirklich zurückgebildet? */
+    vc_RootNIncrement = (vc_RootBiomassOld - vc_RootBiomass) * vc_NConcentrationRoot;
+  } else {
+    vc_RootNIncrement = 0;
+  }
+
+  auto layerIndexBelowRootingDepth = std::min(vc_RootingDepth, nols - 1);
+  double vc_AvailableWaterPercentage = 0.0;
+  if (cropPs.__enable_PASW_root_penetration__) {
+    // In case of drought stress the root will grow deeper //MP: Access point for drought optimisation (this could be changed for waterlogging)
+    double vc_AvailableWater =
+        soilColumn[layerIndexBelowRootingDepth].vs_FieldCapacity() - soilColumn[layerIndexBelowRootingDepth].vs_PermanentWiltingPoint();
+    vc_AvailableWaterPercentage =
+        (soilColumn[layerIndexBelowRootingDepth].get_Vs_SoilMoisture_m3() - soilColumn[layerIndexBelowRootingDepth].vs_PermanentWiltingPoint()) /
+        vc_AvailableWater;
+    if (vc_AvailableWaterPercentage < 0.0) {
+      vc_AvailableWaterPercentage = 0.0;
+    }
+  } else {
+    //MP:turn this off first
+    if (vc_TranspirationDeficit < (0.95 * pc_DroughtStressThreshold[vc_DevelopmentalStage]) //MP: vielleicht ist das Problem, dass hier der selbe Wert verwendet wird
+        && pc_CropSpecificMaxRootingDepth >= 0.8 // only if the crop specific max rooting depth is deeper than 80 cm
+        && vc_RootingDepth_m > 0.95 * vc_MaxRootingDepth
+        && vc_DevelopmentalStage < (pc_NumberOfDevelopmentalStages - 1)) {
+      vc_MaxRootingDepth += 0.005;
+    }
+  }
+
+  if (vc_MaxRootingDepth > (double(nols - 1) * layerThickness)) {
+    vc_MaxRootingDepth = double(nols - 1) * layerThickness;
+  }
+
+  // restrict rootgrowth to everything above impentrable layer
+  if (vs_ImpenetrableLayerDepth > 0) {
+    vc_MaxRootingDepth = min(vc_MaxRootingDepth, vs_ImpenetrableLayerDepth);
+  }
+
+  // ***************************************************************************
+  // *** Taken from Pedersen et al. 2010: Modelling diverse root density   *** //MP: the paper is actually from 2010
+  // *** dynamics and deep nitrogen uptake - a simple approach.        ***
+  // *** Plant & Soil 326, 493 - 510                     ***
+  // ***************************************************************************
+
+  // Determining temperature sum for root growth //MP: there is at least some effect of temperature on root growth (but soil temperature does not seem to be included so far)
+  double pc_MaximumTemperatureRootGrowth = pc_MinimumTemperatureRootGrowth + 20.0;
+  double vc_DailyTemperatureRoot = 0.0;
+  if (vw_MeanAirTemperature >= pc_MaximumTemperatureRootGrowth) {
+    vc_DailyTemperatureRoot = pc_MaximumTemperatureRootGrowth - pc_MinimumTemperatureRootGrowth;
+  } else {
+    vc_DailyTemperatureRoot = vw_MeanAirTemperature - pc_MinimumTemperatureRootGrowth;
+  }
+  if (vc_DailyTemperatureRoot < 0.0) {
+    vc_DailyTemperatureRoot = 0.0;
+  }
+  vc_CurrentTotalTemperatureSumRoot += vc_DailyTemperatureRoot;
+
+  // Determining root penetration rate according to soil clay content [m °C-1 d-1] //MP: this might be extended for soil temperature, bulk density, and available water content
+  // This is not described in Pedersen et al. ... (source ??)
+  double vc_RootPenetrationRate = 0.0; // [m °C-1 d-1]
+
+  if (soilColumn[layerIndexBelowRootingDepth].vs_SoilClayContent() <= 0.02) {
+    vc_RootPenetrationRate = 0.5 * pc_RootPenetrationRate;
+  } else if (soilColumn[layerIndexBelowRootingDepth].vs_SoilClayContent() <= 0.08) {
+    vc_RootPenetrationRate =
+        ((1.0 / 3.0) + (0.5 / 0.06 * soilColumn[layerIndexBelowRootingDepth].vs_SoilClayContent())) *
+        pc_RootPenetrationRate; // [m °C-1 d-1]
+  } else {
+    vc_RootPenetrationRate = pc_RootPenetrationRate; // [m °C-1 d-1]
+  }
+  if (cropPs.__enable_PASW_root_penetration__) {
+    //MP: add constraint for reduced root penetration rate when soil is dry
+    if (vc_AvailableWaterPercentage <= 0.25) {
+      vc_RootPenetrationRate = std::min(1.0, (4 * vc_AvailableWaterPercentage)) * vc_RootPenetrationRate; //MP: APSIM method according to Jones et al (1991)
+    }
+    else {
+      vc_RootPenetrationRate = pc_RootPenetrationRate; // [m °C-1 d-1]
+    }
+  }
+
+  // Calculating rooting depth [m]
+  if (vc_CurrentTotalTemperatureSumRoot <= pc_RootGrowthLag) {
+    vc_RootingDepth_m = pc_InitialRootingDepth; // [m]
+  } else {
+    // corrected because oscillating rooting depth at layer boundaries with texture change
+    /* vc_RootingDepth_m = pc_InitialRootingDepth
+           + ((vc_CurrentTotalTemperatureSumRoot - pc_RootGrowthLag)
+           * vc_RootPenetrationRate); // [m] */
+
+    vc_RootingDepth_m += (vc_DailyTemperatureRoot * vc_RootPenetrationRate); // [m]
+  }
+
+  if (vc_RootingDepth_m <= pc_InitialRootingDepth) vc_RootingDepth_m = pc_InitialRootingDepth;
+  if (vc_RootingDepth_m > vc_MaxRootingDepth) vc_RootingDepth_m = vc_MaxRootingDepth; // [m]
+  if (vc_RootingDepth_m > vs_MaxEffectiveRootingDepth) vc_RootingDepth_m = vs_MaxEffectiveRootingDepth;
+
+  vc_RootingDepth = std::min(int(std::round(vc_RootingDepth_m / layerThickness)), int(nols)); // layer no
+  vc_RootingZone = std::min(int(std::round(1.3 * vc_RootingDepth_m / layerThickness)), int(nols)); // layer no
+
+  vc_TotalRootLength = vc_RootBiomass * pc_SpecificRootLength; //[m m-2]
+
+  // Calculating a root density distribution factor []
+  std::vector<double> vc_RootDensityFactor;
+  double vc_RootDensityFactorSum = 0.0;
+  tie(vc_RootDensityFactor, vc_RootDensityFactorSum) = calcRootDensityFactorAndSum();
+
+  // calculate the distribution of dead root biomass (for later addition into AOM pools (in soil-organic))
+  if (!cropPs.__disable_daily_root_biomass_to_soil__) {
+    fc_MoveDeadRootBiomassToSoil(dailyDeadRootBiomassIncrement, vc_RootDensityFactorSum, vc_RootDensityFactor);
+  }
+
+  // Calculating root density per layer from total root length and
+  // a relative root density distribution factor
+  for (size_t i_Layer = 0; i_Layer < vc_RootingZone; i_Layer++) {
+    vc_RootDensity[i_Layer] = (vc_RootDensityFactor[i_Layer] / vc_RootDensityFactorSum) * vc_TotalRootLength; // [m m-3]//MP: hier könnte man auch an einer layer-spezifischen density arbeiten
+  }
+
+  for (size_t i_Layer = 0; i_Layer < vc_RootingZone; i_Layer++) {
+    // Root diameter [m]
+    if (pc_AbovegroundOrgan[3]) {
+      vc_RootDiameter[i_Layer] = 0.0002 - ((i_Layer + 1) * 0.00001); // [m]
+    } else {
+      vc_RootDiameter[i_Layer] = 0.0001;
+    } //[m]
+
+    // Default root decay - 10 %
+    // vo_FreshSoilOrganicMatter[i_Layer] += vc_RootNIncrement
+    //	* vc_RootDensity[i_Layer]
+    //	* 10.0
+    //	/ vc_TotalRootLength;
+  }
+  // *****************************************************************************
+
+  // *** Original HERMES approach: *** //MP: why is this not used?
+  //  // Taken from Gerwitz & Page --> Parameter for e-function indicating the
+  //  // depth above which 68% of the roots are present
+  //  if (pc_AbovegroundOrgan[3] == 0) {
+  //  vc_RootDistributionFactor = pow((0.081476 + exp(-pc_RootDistributionParam * vc_CurrentTotalTemperatureSum)), 1.8);
+  //  } else {
+  //  vc_RootDistributionFactor = pow((0.081476 + exp(-pc_RootDistributionParam * (vc_CurrentTotalTemperatureSum
+  //								 + vc_CurrentTemperatureSum[1]))), 1.8);
+  //  }
+  //
+  //  if (vc_RootDistributionFactor > 1.00) { // HERMES: 0.35
+  //  vc_RootDistributionFactor = 1.00;
+  //  }
+  //
+  //  if (vc_RootDistributionFactor < (0.45 / (vc_MaxRootingDepth * (vs_LayerThickness * 100.0)))) {
+  //  vc_RootDistributionFactor = 0.45 / (vc_MaxRootingDepth * (vs_LayerThickness * 100.0));
+  //  }
+  //
+  //  // original HERMES:
+  //  // vc_RootingDepth = int(floor(0.5 + (4.5 / vc_RootDistributionFactor / (vs_LayerThickness * 100.0)))); //[layer]
+  //
+  //  // new:
+  //  vc_RootingDepth = int(floor((1.1 - vc_RootDistributionFactor) * (1.0 / vs_LayerThickness) * vc_MaxRootingDepth)); //[layer]
+  //
+  //
+  //
+  //
+  //  // Assuming that root diameter [cm] decreases with depth
+  //  for (int i_Layer = 0; i_Layer < vc_RootingDepth; i_Layer++) {
+  //
+  //  if (pc_AbovegroundOrgan[3] == 0) {
+  //    vc_RootDiameter[i_Layer] = 0.0001; //[m]
+  //  } else {
+  //    vc_RootDiameter[i_Layer] = 0.0002 - ((i_Layer + 1) * 0.00001); // [m]
+  //  }
+  //  }
+  //
+  //
+  //
+  //  for (int i_Layer = 0; i_Layer < vc_RootingDepth; i_Layer++) {
+  //
+  //  vc_SoilDepth = (i_Layer + 1) * vs_LayerThickness; //[m]
+  //
+  //  // Root length down to layer i [m]
+  //  vc_RootLengthToLayer[i_Layer] = (vc_RootBiomass * (1.0 - exp(-vc_RootDistributionFactor * vc_SoilDepth * 100.0))
+  //			     / 100000.0 * 100.0 / 7.0) / 100.0;
+  //
+  //  if (i_Layer > 1) {
+  //    vc_RootLengthInLayer[i_Layer] = fabs(vc_RootLengthToLayer[i_Layer] - vc_RootLengthToLayer[i_Layer - 1])
+  //			    / (vc_RootDiameter[i_Layer] * vc_RootDiameter[i_Layer] * PI) / vs_LayerThickness;
+  //    // [m m-3]
+  //  } else {
+  //    vc_RootLengthInLayer[i_Layer] = fabs(vc_RootLengthToLayer[i_Layer]) / (vc_RootDiameter[i_Layer]
+  //							    * vc_RootDiameter[i_Layer] * PI) / vs_LayerThickness;
+  //    // [m m-3]
+  //  }
+  //
+  //  // Root density per volume soil [m m-3]
+  //  vc_RootDensity[i_Layer] = vc_RootLengthInLayer[i_Layer];
+  //
+  //  // Root surface [m m-2]
+  //  vc_RootSurface[i_Layer] = vc_RootDensity[i_Layer] * vc_RootDiameter[i_Layer] * 2.0 * PI;
+  //  }
+  //
+  //  vc_TotalRootLength = 0;
+  //  for (int i_Layer = 0; i_Layer < vc_RootingDepth; i_Layer++) {
+  //
+  //  // Total root length in [m m-2]
+  //  vc_TotalRootLength += vc_RootDensity[i_Layer] * vs_LayerThickness;
+  //  }
+  //
+  //  for (int i_Layer = 0; i_Layer < vc_RootingDepth; i_Layer++) {
+  //  // default root decay - 10 %
+  //  vo_FreshSoilOrganicMatter[i_Layer] += vc_RootNIncrement * vc_RootDensity[i_Layer] * 10.0 / vc_TotalRootLength;
+  //  }
+  //
+
+  // Limiting the maximum N-uptake to 26-13*10^-14 mol/cm W./sec
+  vc_MaxNUptake = pc_MaxNUptakeParam - (vc_CurrentTotalTemperatureSum / vc_TotalTemperatureSum); // [kg m Wurzel-1]
+
+  if ((vc_CropNDemand / 10000.0) > (vc_TotalRootLength * vc_MaxNUptake * vc_TimeStep)) {
+    vc_CropNDemand = vc_TotalRootLength * vc_MaxNUptake * vc_TimeStep; //[kg m-2]
+  } else {
+    vc_CropNDemand = vc_CropNDemand / 10000.0; // [kg ha-1 --> kg m-2]
+  }
+}
+
+/**
+ * @brief  Dry matter allocation within the crop
+ *
+ *  In this function the result from crop photosynthesis is allocated to the
+ *  different crop organs under consideration of any stress factors
+ *  (Water, Nitrogen, Temperature)
+ *
+ * @param vs_NumberOfLayers
+ * @param vs_LayerThickness
+ * @param pc_CropName
+ * @param vc_DevelopmentalStage
+ * @param vc_Assimilates
+ * @param vc_NetMaintenanceRespiration
+ * @param pc_CropSpecificMaxRootingDepth
+ * @param vc_CropNRedux
+ */
+void CropModule::fc_CropDryMatter_hourly(double vw_MeanAirTemperature, double vc_NetPhotosynthesis, double vc_CropNRedux, double vc_TimeStep) {
+  assert(soilColumn.vs_NumberOfLayers() >= 0);
+  auto nols = soilColumn.vs_NumberOfLayers();
+  double layerThickness = soilColumn.vs_LayerThickness();
+
+  double vc_MaxRootNConcentration = 0.0; // old WGM
+  double vc_NConcentrationOptimum = 0.0; // old DTOPTN
+  double vc_RootNIncrement = 0.0;       // old WUMM
+  double vc_AssimilatePartitioningCoeffOld = 0.0;
+  double vc_AssimilatePartitioningCoeff = 0.0;
+  // double vc_RootDistributionFactor          = 0.0; // old QREZ
+  // double vc_SoilDepth                 = 0.0; // old TIEFE
+  // std::vector<double> vc_RootLengthToLayer(nols, 0.0);	// old WULAE
+  // std::vector<double> vc_RootLengthInLayer(nols, 0.0);	// old WULAE2
+  //   std::vector<double> vc_CapillaryWater(nols, 0.0);
+  // std::vector<double> vc_RootSurface(nols, 0.0); // old FL
+
+  const CropModuleParameters &user_crops = cropPs;
+  double pc_MaxCropNDemand = user_crops.pc_MaxCropNDemand;
+
+  // double pc_GrowthRespirationRedux = user_crops->getPc_GrowthRespirationRedux();
+  //  Assuming that growth respiration takes 30% of total assimilation --> 0.7 [kg ha-1]
+  // vc_NetPhotosynthesis = (vc_GrossPhotosynthesis - vc_NetMaintenanceRespiration + vc_ReserveAssimilatePool) * pc_GrowthRespirationRedux; // from HERMES algorithms
+  // vc_NetPhotosynthesis = vc_Assimilates; // from AGROSIM algorithms
   // double stage_mobil_from_storage_coeff = 0.3;
   double TMP_Regulatory_factor = speciesPs.pc_StageMobilFromStorageCoeff[vc_DevelopmentalStage];
 
