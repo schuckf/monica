@@ -152,9 +152,11 @@ hPhoto::PAR_radiation_result hPhoto::PAR_radiation(double global_rad, double ext
 
 double hPhoto::Spitters_canop_photo_dL(double beta, double L, double I0_dr, double I0_df, double A_m, double epsilon, double k_df, double sigma, bool kgpha, int leaf_angle_integration_style)
 {
+  assert(L > 0.);
+
   //beta *= deg2rad                     // convert [deg] to [rad] if input is in [deg]
   assert((beta >= 0.) && (beta <= (0.5 * M_PI)));
-  double sinbeta = max(0., sin(beta));  // beta is the solar elevation angle [rad]  // assert(sinbeta >= 0.);
+  double sinbeta = max(hPhoto::eps, sin(beta));  // beta is the solar elevation angle [rad]  // assert(sinbeta >= hPhoto::eps);
 
   // eq. 1
   // "sigma = scattering coefficient of single leaves and for visible radiation [...]. Hence, a fraction 1-sigma of the incoming flux is potentially available for absorption by the canopy."
@@ -198,13 +200,13 @@ double hPhoto::Spitters_canop_photo_dL(double beta, double L, double I0_dr, doub
   // eq. 10, eq. 11, eq. 12
   double Ia_df = (1. - rho) * I0_df * k_df * exp(-k_df * L);                                                    // absorption of the diffuse flux, derived from eq. 3
   // double Ia_dr = (1. - rho) * I0_dr * pow(1. - sigma, 0.5) * k_bl * exp(- pow(1. - sigma, 0.5) * k_bl * L);  // absorption of the direct flux, derived from eq. 4
-  double Ia_dr = (1. - rho) * I0_dr * k_dr * exp(-k_dr * L);                                                    // eq. 11, re-arranged to use k_dr similarly to Spitters et al. (1989, p. 154)
-  // double Ia_drdr = (1. - sigma) * I0_dr * k_bl * exp(- pow(1. - sigma, 0.5) * k_bl * L);                        // Of the direct component of the direct flux (eq. 5), the non-scattered part 1-sigma is absorbed
-  double Ia_drdr = (1. - sigma) * I0_dr * k_bl * exp(- k_bl * L);                                               // eq. 11, but with k_bl (instead of k_dr) in the exponent; similar to implementation in Spitters et al. (1989, p. 154)
+  double Ia_dr = (sin(beta) <= hPhoto::eps) ? 0.0 : (1. - rho) * I0_dr * k_dr * exp(-k_dr * L);                 // eq. 11, re-arranged to use k_dr similarly to Spitters et al. (1989, p. 154), safeguard added
+  // double Ia_drdr = (1. - sigma) * I0_dr * k_bl * exp(- pow(1. - sigma, 0.5) * k_bl * L);                     // Of the direct component of the direct flux (eq. 5), the non-scattered part 1-sigma is absorbed
+  double Ia_drdr = (sin(beta) <= hPhoto::eps) ? 0.0 : (1. - sigma) * I0_dr * k_bl * exp(- k_bl * L);            // eq. 11, but with k_bl (instead of k_dr) in the exponent; similar to implementation in Spitters et al. (1989, p. 154), safeguard added
 
   // shaded leaf area
   // eq. 13
-  double Ia_sh = Ia_df + (Ia_dr - Ia_drdr);           // absorbed light energy shaded leaf area (absorbs the diffuse flux and the diffused component of the direct flux) [J m-2 leaf s-1]
+  double Ia_sh = max(0.0, Ia_df + (Ia_dr - Ia_drdr));           // absorbed light energy shaded leaf area (absorbs the diffuse flux and the diffused component of the direct flux) [J m-2 leaf s-1]
 
   assert(A_m > 0.); // this should usually be true, since MONICA does something like this: A_m = max(0.1, A_m);
   double A_sh = 0.;
@@ -221,7 +223,7 @@ double hPhoto::Spitters_canop_photo_dL(double beta, double L, double I0_dr, doub
   if ((leaf_angle_integration_style == 0) || (leaf_angle_integration_style == 10)) {  // None
     // sunlit leaf area
     // eq. 14
-    double Ia_sl = Ia_sh + (1. - sigma) * k_bl * I0_dr;         // absorbed light energy sunlit leaf area (receives diffuse and direct radiation) [J m-2 leaf s-1]
+    double Ia_sl = (sin(beta) <= hPhoto::eps) ? Ia_sh : Ia_sh + (1. - sigma) * k_bl * I0_dr;         // absorbed light energy sunlit leaf area (receives diffuse and direct radiation) [J m-2 leaf s-1], added safeguard
     if (leaf_angle_integration_style == 10) {
       A_sl = A_m * (epsilon * Ia_sl / (epsilon * Ia_sl + A_m)); // None, but with rectangular hyperbola function
     } else {
@@ -231,13 +233,13 @@ double hPhoto::Spitters_canop_photo_dL(double beta, double L, double I0_dr, doub
     // correction to account for the variation in leaf angle and thus in illumination intensity for sunlit leaf area
     // FS: This is crucial, since photosynthesis is not linear. It is not sufficient to average irradiances over leaf angles beforehand - instead, photosynthesis should be averaged by integrating over leaf angles.
     // eq. 16, eq. 17
-    double Ia_sldr = (1. - sigma) * I0_dr / sinbeta;  // direct flux is absorbed by a leaf perpendicular to the direct beam
+    double Ia_sldr = (sinbeta <= hPhoto::eps) ? 0.0 : (1. - sigma) * I0_dr / sinbeta;  // direct flux is absorbed by a leaf perpendicular to the direct beam, custom safeguard added since
     if (leaf_angle_integration_style == 1) {          // Spitters 1986, custom implementation including Wageningen school implementations-inspired numerical safeguards;
       const double A_m_nsmin = kgpha ? 2.0 : 0.2; // 0.2 [g CO2 m-2 leaf h-1] or 2 [kg CO2 ha-1 leaf h-1]; Wageningen school-style numerical safeguard;
                                                   // see e.g. WOFOST (https://github.com/ajwdewit/WOFOST/blob/deac197d3c74741832b815581699a6c825894758/sources/w60lib/assim.for)
                                                   // or python crop smulation environment (pcse = WOFOST pure python implementation, https://github.com/ajwdewit/pcse/blob/4d9f0e4f542e9062db338aaf1a227a75f1b03949/pcse/crop/assimilation.py),
                                                   // which both use 2.0 [kg CO2 ha-1 leaf h-1]
-      if (Ia_sldr <= 0.) {
+      if (Ia_sldr <= hPhoto::eps) {
         A_sl = A_sh;  // this is the limit of eq. 17 when Ia_sldr -> 0
       } else {
         // eq. 17
@@ -254,7 +256,7 @@ double hPhoto::Spitters_canop_photo_dL(double beta, double L, double I0_dr, doub
       }
     } else if (leaf_angle_integration_style == 11) { // SUCROS87 Subroutine ASS (Spitters et al. 1989) integration over leaf angle distribution
       const double A_m_nsmin = kgpha ? 2.0 : 0.2;
-      if (Ia_sldr <= 0.) {
+      if (Ia_sldr <= hPhoto::eps) {
         A_sl = A_sh;  // this is the limit of eq. 17 when Ia_sldr -> 0
       } else {
         // !!! ToDo: check this again !!!
@@ -290,10 +292,16 @@ double hPhoto::Spitters_canop_photo_dL(double beta, double L, double I0_dr, doub
   return A;
 
   // return {f_sl, A_sl, A_sh};
-  }
+}
 
 
 double hPhoto::Spitters_canop_photo_multilayer(double beta, double LAI, double I0_dr, double I0_df, double A_m, double epsilon, double k_df, double sigma, bool kgpha, int leaf_angle_integration_style, int n_canopy_layers) {
+  assert(n_canopy_layers > 0);
+
+  if (LAI <= 0.0) {
+    return 0.0;
+  }
+
   double dl = 1. / n_canopy_layers;
 
   // vector<double> canopy_layers;
@@ -314,6 +322,10 @@ double hPhoto::Spitters_canop_photo_multilayer(double beta, double LAI, double I
 
 
 double hPhoto::Spitters_canop_photo_3p(double beta, double LAI, double I0_dr, double I0_df, double A_m, double epsilon, double k_df, double sigma, bool kgpha, int leaf_angle_integration_style) {
+  if (LAI <= 0.0) {
+    return 0.0;
+  }
+
   // 3-point integration procedure from Spitters (1986)
   // eq. 20, eq. 21
   // L = (0.5 + p * pow(0.15, 0.5)) * LAI;               // p = 1,0,1
