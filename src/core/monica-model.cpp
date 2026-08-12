@@ -650,6 +650,8 @@ void MonicaModel::step() {
       p_daysWithCrop++;
 
       unsigned int julday = date.julianDay();
+
+      vector<double> photoFactors;
       for (int h = 0; h < 24; ++h) {
         auto climateData_hourly = ...;
         cropStep_hourly();

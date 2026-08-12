@@ -214,12 +214,33 @@ public:
 
   void fc_CropDryMatter(double vw_MeanAirTemperature);
 
+
+
+  // hourly inputs needed for photosynthesis
+  struct hp {
+    double leafT;
+    double solarEl;
+    double globalRad;
+    double extraRad;
+  };
+
+
+  std::pair<double, double> hourlyGrossPhotosynthesis();
+  
+  
+  void fc_CropPhotosynthesis_hourly_agg(double vw_MeanAirTemperature,
+                            double vw_MaxAirTemperature,
+                            double vw_MinAirTemperature,
+                            double vw_AtmosphericCO2Concentration,
+                            double vw_AtmosphericO3Concentration,
+                            Tools::Date currentDate);
+
   // FS: hourly photosynthesis stress factors and stress factors-dependent partitioning
   //     Is there maybe a better way of doing this?
   double fc_HeatStressImpact_hourly(double vc_PhotoTemperature, int vc_DaysAfterBeginFlowering_);
   double fc_FrostKill_hourly(double vc_CrownTemperature);
   double fc_DroughtImpactOnFertility_hourly(double vc_TranspirationDeficit_hourly, double vc_OxygenDeficit_hourly);
-  pair<double, double> fc_CropNitrogen_hourly();
+  std::pair<double, double> fc_CropNitrogen_hourly();
   void fc_CropDryMatter_hourly(double vw_MeanAirTemperature, double vc_NetPhotosynthesis, double vc_CropNRedux, double vc_TimeStep);
 
   double fc_ReferenceEvapotranspiration(double vw_MaxAirTemperature,
