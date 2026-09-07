@@ -150,7 +150,7 @@ public:
  * @param vw_MeanAirTemperature
  * @return Oi
  */
-  double CropModule::Oi_empirical(double vw_MeanAirTemperature) const;
+  double Oi_empirical(double vw_MeanAirTemperature) const;
 
   /**
  * @brief intercellular CO2 partial pressure
@@ -161,7 +161,7 @@ public:
  * @param vw_AtmosphericCO2Concentration
  * @return Ci
  */
-  double CropModule::Ci_empirical(double vw_MeanAirTemperature, double vw_AtmosphericCO2Concentration) const;
+  double Ci_empirical(double vw_MeanAirTemperature, double vw_AtmosphericCO2Concentration) const;
 
   /**
    * @brief helper function to calculate vc_KTkc, vc_KTko, term1 and term2
@@ -173,12 +173,13 @@ public:
    *  term1
    *  term2
    */
-  std::tuple<double, double, double, double> CropModule::vc_KTkc_vc_KTko(double vw_MeanAirTemperature) const;
+  std::tuple<double, double, double, double> vc_KTkc_vc_KTko(double vw_MeanAirTemperature) const;
   struct A_rubisco_results {
       double vc_AssimilationRate;
       double vc_AssimilationRateReference;
       double vc_RadiationUseEfficiency;
       double vc_RadiationUseEfficiencyReference;
+      double vc_KTkc;
   };
   /**
    * @brief Rubisco-controlled rate of CO2 assimilation (=carboxylation-limited FvCB assimilation rate)
@@ -192,7 +193,20 @@ public:
    * @param _cropPhotosynthesisResults           Default Voc::CPData monica::CropModule::_cropPhotosynthesisResults to be altered by the function. Seems to be a helper struct used for debugging?
    * @return A_rubisco_results (vc_AssimilationRate, vc_AssimilationRateReference, vc_RadiationUseEfficiency, vc_RadiationUseEfficiencyReference)
    */
-  A_rubisco_results CropModule::A_rubisco(double vw_MeanAirTemperature, double Cc, double O, Voc::CPData &_cropPhotosynthesisResults) const;
+  A_rubisco_results A_rubisco(double vw_MeanAirTemperature, double Cc, double O, Voc::CPData &_cropPhotosynthesisResults) const;
+
+  struct hp {
+    double leafT;
+    double solarEl;
+    double globalRad;
+    double extraRad;
+  };
+  std::tuple<double, double, double> fc_CropGrossPhotosynthesis_h(double inst_diff_rad,
+                                                                  double inst_dir_rad,
+                                                                  double solarElevation_rad,
+                                                                  double leafTemperature,
+                                                                  double vw_AtmosphericCO2Concentration,
+                                                                  double vw_AtmosphericO3Concentration);
 
   void fc_CropPhotosynthesis(double vw_MeanAirTemperature,
                              double vw_MaxAirTemperature,
@@ -209,6 +223,8 @@ public:
 
   void fc_DroughtImpactOnFertility();
 
+  void fc_DroughtImpactOnFertility_h();
+
   void fc_CropNitrogen();
 
   void fc_CropDryMatter(double vw_MeanAirTemperature);
@@ -221,10 +237,24 @@ public:
                                         double vw_WindSpeedHeight,
                                         double vw_AtmosphericCO2Concentration);
 
+  double fc_ReferenceEvapotranspiration_h(double vw_DewAirTemperature, double vw_RelativeHumidity_h,
+                                          double vw_MeanAirTemperature_h,
+                                          double vw_WindSpeed_h, double vw_WindSpeedHeight,
+                                          double vw_AtmosphericCO2Concentration,
+                                          double vc_ExtraterrestrialRadiation_h, double vc_ExtraterrestrialRadiation_3h_b4_sunseth,
+                                          double vc_GlobalRadiation_h, double vc_GlobalRadiation_3h_b4_sunseth,
+                                          double vc_GrossPhotosynthesisReference_mol_h, bool is_daytime,
+                                          bool calc_soilHeatflux=true);
+
   void fc_CropWaterUptake(size_t vm_GroundwaterTable,
                           double vw_GrossPrecipitation,
                           double vc_CurrentTotalTemperatureSum,
                           double vc_TotalTemperatureSum);
+
+  void fc_CropInterception(double vw_GrossPrecipitation);
+
+  void fc_CropWaterUptake_h(size_t vm_GroundwaterTable,
+                            double vc_ReferenceEvapotranspiration_h); //, double vc_OxygenDeficit_h);
 
   void fc_CropNUptake(size_t vm_GroundwaterTable,
                       double /*vc_CurrentTotalTemperatureSum*/,
@@ -527,6 +557,10 @@ public:
   double vc_TranspirationReduced{0.0};
   double rootNRedux{0.0}; //! old REDWU
   int vc_TimeUnderAnoxia{0};
+  double vc_TranspirationDeficit_h{ 1.0 };                                  // FS: hourly
+  double vc_PotentialTranspirationDeficit_h{ 0.0 };                         // FS: hourly
+  double vc_ActualTranspirationDeficit_h{ 0.0 };                            // FS: hourly
+  double vc_TranspirationReduced_h{ 0.0 };                                  // FS: hourly
 
 private:
   Intercropping& _intercropping;
@@ -556,6 +590,7 @@ private:
   double vc_AbovegroundBiomassOld{0.0}; //! old OBALT
   std::vector<bool> pc_AbovegroundOrgan; //! old KOMP
   double vc_ActualTranspiration{0.0};
+  double vc_ActualTranspiration_h{0.0};                                     // FS: hourly
   std::vector<std::vector<double>> pc_AssimilatePartitioningCoeff; //! old PRO
   double pc_AssimilateReallocation{};
   double vc_Assimilates{0.0};
@@ -597,6 +632,7 @@ private:
   size_t vc_DevelopmentalStage{0}; //! old INTWICK
   int _noOfCropSteps{0};
   double vc_DroughtImpactOnFertility{1.0};
+  double vc_DroughtImpactOnFertility_h{1.0};                                // FS: hourly
   double pc_DroughtImpactOnFertilityFactor{};
   std::vector<double> pc_DroughtStressThreshold; //! old DRYswell
   bool pc_EmergenceFloodingControlOn{};
@@ -606,6 +642,7 @@ private:
   bool vc_ErrorStatus{false};
   std::string vc_ErrorMessage;
   double vc_EvaporatedFromIntercept{0.0};
+  double vc_EvaporatedFromIntercept_h{0.0};                                 // FS: hourly
   double vc_ExtraterrestrialRadiation{0.0};
   double pc_FieldConditionModifier{};
   size_t vc_FinalDevelopmentalStage{0};
@@ -682,15 +719,18 @@ private:
   std::vector<std::vector<double>> pc_OrganSenescenceRate; //! old DEAD
   double vc_OvercastDayRadiation{0.0}; //! old DRO
   double vc_OxygenDeficit{0.0}; //! old LURED
+  double vc_OxygenDeficit_h{0.0};                                           // FS: hourly
   double pc_PartBiologicalNFixation{};
   bool pc_Perennial{false};
   double vc_PhotoperiodicDaylength{0.0}; //! old DLP
   double vc_PhotActRadiationMean{0.0}; //! old RDN
   double pc_PlantDensity{};
   double vc_PotentialTranspiration{0.0};
+  double vc_PotentialTranspiration_h{0.0};                                  // FS: hourly
   double vc_ReferenceEvapotranspiration{0.0};
   double vc_RelativeTotalDevelopment{0.0};
   double vc_RemainingEvapotranspiration{0.0};
+  double vc_RemainingEvapotranspiration_h{0.0};                             // FS: hourly
   double vc_ReserveAssimilatePool{0.0}; //! old ASPOO
   double pc_ResidueNRatio{};
   double pc_RespiratoryStress{};
