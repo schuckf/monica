@@ -1359,11 +1359,13 @@ void CropModule::step(double vw_MeanAirTemperature,
       }
 
       // aggregation back to daily time step, mean
+      // daily transpiration deficit is needed for fc_DroughtImpactOnFertility(), which affects CropModule::fc_CropDryMatter(vw_MeanAirTemperature) via vc_DroughtImpactOnFertility
       vc_TranspirationDeficit = accumulate(hourly_TranspirationDeficit_day.begin(), hourly_TranspirationDeficit_day.end(), 0.) / hourly_TranspirationDeficit_day.size();
       // @ ToDo FS: Is mean good enough, or is a weighted mean (e.g. with hourly photosynthesis) required?
       // @ ToDo FS: Or should we calculate the daily vc_TranspirationDeficit in a similar way as in CropModule::fc_CropWaterUptake(...)?
       // vc_TranspirationDeficit = ... calculate daily vc_TranspirationDeficit from CropModule::fc_CropWaterUptake(...) without actually running CropModule::fc_CropWaterUptake(...) ...
 
+      // CropModule::fc_CropDryMatter(...) uses the (daily) vc_KTkc CropModule attr
       vc_KTkc = get<0>(vc_KTkc_vc_KTko(vw_MeanAirTemperature));                                             // FS: reaction speed factor with the (daily) mean temperature (=default daily MONICA)
       // vc_KTkc = accumulate(hourly_KTkc_day.begin(), hourly_KTkc_day.end(), 0.) / hourly_KTkc_day.size(); //     vs. mean of the (hourly) reaction speed factors
       // vc_KTkc = ... f(hourly_KTkc_day, hourly_GP_day) ...                                                //     vs. some sort of weighted mean (not sure what is best here, but don't change too much at once for now)
