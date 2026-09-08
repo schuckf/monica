@@ -1289,6 +1289,11 @@ void CropModule::step(double vw_MeanAirTemperature,
 
         double vc_GrossAssimilates_h = vc_Assimilates_h;
 
+        // if (cropPs.__enable_hourly_photosynthesis__) {
+        // // FS: For Agri-PV, dark respiration might be too high in general, as suggested by this paper https://doi.org/10.1016/j.eja.2026.128268 
+        // //     However, I think there is little we can do about it now (better process understanding or more quantitative data on this required).
+        // } else ...
+
         // ####################################################################################
         // hourly maintenance respiration (simplified; inspired by AGROSIM / daily MONICA code)
         // ####################################################################################
@@ -1362,8 +1367,12 @@ void CropModule::step(double vw_MeanAirTemperature,
       // daily transpiration deficit is needed for fc_DroughtImpactOnFertility(), which affects CropModule::fc_CropDryMatter(vw_MeanAirTemperature) via vc_DroughtImpactOnFertility
       vc_TranspirationDeficit = accumulate(hourly_TranspirationDeficit_day.begin(), hourly_TranspirationDeficit_day.end(), 0.) / hourly_TranspirationDeficit_day.size();
       // @ ToDo FS: Is mean good enough, or is a weighted mean (e.g. with hourly photosynthesis) required?
-      // @ ToDo FS: Or should we calculate the daily vc_TranspirationDeficit in a similar way as in CropModule::fc_CropWaterUptake(...)?
-      // vc_TranspirationDeficit = ... calculate daily vc_TranspirationDeficit from CropModule::fc_CropWaterUptake(...) without actually running CropModule::fc_CropWaterUptake(...) ...
+      // @ ToDo FS: Or should we calculate the daily vc_TranspirationDeficit in a similar way as in CropModule::fc_CropWaterUptake(...)? Would this maybe work by changing fc_CropWaterUptake(...)
+      //            to a function that does not perform hidden modifications to claas or instance attrs. Instead, all inputs and outputs need to be provided and modification of CropModule attrs
+      //            happens in a next step. That way, daily vc_TranspirationDeficit can be calculated without  modifying anything, and maybe additionally the code could even be applied to daily
+      //            as well as hourly time steps? 
+      // vc_TranspirationDeficit = ... calculate daily vc_TranspirationDeficit from CropModule::fc_CropWaterUptake(...) without actually running the CropModule::fc_CropWaterUptake(...) method ...
+      //                               (because this method currently modifies some attrs in the background, which it shouldn't in this case)
 
       // CropModule::fc_CropDryMatter(...) uses the (daily) vc_KTkc CropModule attr
       vc_KTkc = get<0>(vc_KTkc_vc_KTko(vw_MeanAirTemperature));                                             // FS: reaction speed factor with the (daily) mean temperature (=default daily MONICA)
@@ -3656,8 +3665,7 @@ std::tuple<double, double, double> CropModule::fc_CropGrossPhotosynthesis_h(doub
   double hourlyGrossPhotoRef = 0.;
   double KTkc;
   if ((inst_diff_rad <= 0) && (inst_dir_rad <= 0)) {
-    ; // no need to calculate anything
-
+    ; // no need to calculate anything ...
     // ... apart from maybe the factor for chemical reaction speeds related to CO2
     KTkc = (pc_CarboxylationPathway == 1) ? get<0>(vc_KTkc_vc_KTko(leafTemperature)) : vc_KTkc; // FS: Is this intended to stay 0.0 for C4 crops? What are the implications regarding CropModule::fc_CropDryMatter(...)
     // if needed, maybe calculate explicitly? KTkc = get<0>(vc_KTkc_vc_KTko(leafTemperature));
@@ -3690,6 +3698,21 @@ std::tuple<double, double, double> CropModule::fc_CropGrossPhotosynthesis_h(doub
       KTkc = vc_KTkc; // FS: Is this intended to stay 0.0 for C4 crops? What are the implications regarding CropModule::fc_CropDryMatter(...)
       // if needed, maybe calculate explicitly? KTkc = get<0>(vc_KTkc_vc_KTko(leafTemperature));
     }
+
+    /* FS: for Agri-PV, this paper suggests that light response curve parameters can change through acclimation: https://doi.org/10.1016/j.eja.2026.128268
+           - both light compensation point and dark respiration decrease in the shade
+           - A_m seems to remain stable in Agri-PV systems (but not in Agroforestry systems!)
+           - epsilon changes were not sigingicant
+
+           Can these process be added to the maintenance and growth respiration calculations, or is an empirical factor all we can do here?
+           - key question: What actually happens during aclimation that reduces dark respiration?
+                           -> The paper discusses some rough ideas, but does not seem to be 100% sure about which processes exactly actually
+                              cause this or how to represent them mechanistically.
+           - So for now, we could only apply an empirical factor I guess (provided that we have enough empirical evidence for different sites
+             and Agri-PV systems, which we probably don't have)
+
+           Also, additionally, it might be worth thinking about how morphological changes affect LAI and k_df (not discussed in the paper).
+    */
 
     if (vc_CuttingDelayDays > 0) {
       vc_AssimilationRate_hourly = 0.1;
