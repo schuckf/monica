@@ -4841,7 +4841,8 @@ void CropModule::fc_CropWaterUptake_h(size_t vc_GroundwaterTable,
       if (vc_AvailableWaterPercentage_h < 0.0) {
         vc_AvailableWaterPercentage_h = 0.0;
       }
-      //MP: Where do all these numbers come from? Potential need for improvement of the numbers
+      //MP: Where do all these numbers come from? Potential need for improvement of the numbers   // FS: [source missing]; these seem to be the hard-coded functions for the transpiration reduction factor and
+                                                                                                  //     for root water uptake efficiency (Fig 1 in https://zalf-rpm.github.io/monica-documentation/model_science/crop_processes/transpiration)
       //This would be the access point for considering compensatory effects of increased/decreased water uptake from layers that hold enough water.
       //An alternative approach for considering compensatory effects is to go through a soil water-dependent root penetration rate.
       if (vc_AvailableWaterPercentage_h < 0.15) {//MP: Access point for drought optimisation (this could be extended for waterlogging), this is for very dry condtions
@@ -4880,14 +4881,12 @@ void CropModule::fc_CropWaterUptake_h(size_t vc_GroundwaterTable,
       vc_RemainingTotalRootEffectivity = vc_TotalRootEffectivity;
     }
 
-    /* @ToDo FS: add or cherry-pick this
     // [TRANSPLANT SHOCK] Water Uptake Limitation.
     // Limits the total active root water uptake effectivity proportional to the shock recovery efficiency factor.
     if (vc_TransplantEfficiency < 1.0) {
       vc_TotalRootEffectivity *= vc_TransplantEfficiency;
       vc_RemainingTotalRootEffectivity = vc_TotalRootEffectivity;
     }
-    */
 
     // std::cout << setprecision(11) << "vc_TotalRootEffectivity: " << vc_TotalRootEffectivity << std::endl;
     // std::cout << setprecision(11) << "vc_OxygenDeficit: " << vc_OxygenDeficit << std::endl;
