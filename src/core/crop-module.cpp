@@ -1092,6 +1092,13 @@ void CropModule::step(double vw_MeanAirTemperature,
       vector<double> hourlyGlobrad, hourlyExtrarad, hourlySolarEl, hourlyAirT,  hourlyIdif, hourlyIdir;
       int sunriseH = 0, sunsetH = 0;  //FS: defined in a way that sunrise is included in daytime (sun_el > 0) and sunset is excluded from daytime (including both time steps might otherwise lead to overestimation of irradiance)
       
+      /*FS: Maybe even add sub-hourly option in the future if needed? 
+      // double dt = 24.0 / 48.0;           // 0.5 hours
+      // for (int hs = 0; hs < std::floor(24.0, dt); ++hs) {   // iterate hs from 1 to std::floor(24.0, dt)=48.0?
+      //   double t = dt * (double(hs));
+      ...
+      */
+
       for (int h = 0; h < 24; ++h) {      // hourly disaggregation or input read in
         double sun_el, hgr;
         if (!cropPs.__hourly_in_data__.empty()) {  // hourly air temperature and diffuse and direct irradiance input from file
@@ -1253,13 +1260,11 @@ void CropModule::step(double vw_MeanAirTemperature,
 #pragma region apply photo reduction factors // apply factors that reduce (gross) photosynthesis
         // gross photosynthesis * pc_FieldConditionModifier * vc_CropFrostRedux * (vc_OxygenDeficit or vc_TranspirationDeficit)
 
-        /* @ToDo FS: Also add new [TRANSPLANT SHOCK] or cherry-pick when merging
         // [TRANSPLANT SHOCK] Photosynthesis Limitation.
         // Reduces the daily gross CO2 assimilation rate according to the shock recovery efficiency factor.
         if (vc_TransplantEfficiency < 1.0) {
           vc_GrossCO2Assimilation *= vc_TransplantEfficiency; // FS: this is a daily factor, updated at the start of CropModule::step(...)
         }
-        */
 
         // reduction value for assimilate amount to simulate field conditions;
         vc_Assimilates_h *= pc_FieldConditionModifier;  // FS: keep daily field condition modifier for now
@@ -1279,7 +1284,7 @@ void CropModule::step(double vw_MeanAirTemperature,
                                           : pc_DroughtStressThreshold[vc_DevelopmentalStage];
 
         // FS: vc_TranspirationDeficit seems to be calculated using fc_CropWaterUptake(soilColumn.vm_GroundwaterTableLayer, vw_GrossPrecipitation, vc_CurrentTotalTemperatureSum, vc_TotalTemperatureSum);
-        //     In step(...), the fc_CropWaterUptake(...) method is called after fc_CropPhotosynthesis, so the transpiration deficit of the previous day is used?
+        //     In step(...), the fc_CropWaterUptake(...) method is called after fc_CropPhotosynthesis, so the transpiration deficit of the previous step is used?
         //     fc_CropWaterUptake(...) depends on vc_ReferenceEvapotranspiration(...), which depends on vc_GrossPhotosynthesisReference_mol for stomatal resistance calculations
         //     Do we need hourly crop water uptake calculations here, maybe even an hourly step() method to solve this in a clean way?
         if (vc_TranspirationDeficit_h < vc_DroughtStressThreshold_h) {//MP: Access point for drought optimisation
@@ -2721,7 +2726,12 @@ void CropModule::fc_CropPhotosynthesis(double vw_MeanAirTemperature,
   double XReference = log(1.0 + 0.45 * vc_ClearDayRadiation / (vc_EffectiveDayLength * 3600.0) *
                           vc_NetRadiationUseEfficiencyReference / (SSLAE * vc_AssimilationRateReference));
 
-  double PHCH1 = SSLAE * vc_AssimilationRate * vc_EffectiveDayLength * X / (1.0 + X); // = HERMES // FS: X / (1.0 + X) is a rectangular hyperbola light response curve; most light response curve approaches nowadays seem to use an exponential version (1.0-exp(-x)) instead (see photosynthesis-hourly.h/.cpp for more details)
+  double PHCH1 = SSLAE * vc_AssimilationRate * vc_EffectiveDayLength * X / (1.0 + X); // = HERMES // FS: X / (1.0 + X) [function type c*x/(x+c)] is a rectangular hyperbola light response curve
+                                                                                                  //     other light response curve approaches often seem to use an exponential version 1.0-exp(-x)
+                                                                                                  //     [function type c*(1.0-exp(-x/c))] instead (see photosynthesis-hourly.h/.cpp for more details);
+                                                                                                  //     gas exchange measurements often seem to use rectangular hyperbola or non-rectangular hyperbola
+                                                                                                  //     light responses e.g. of types x+c-sqrt((x+c)^2-4x*c*theta) or x+c-sqrt((x+c)^2-4x*c)/(2*theta)
+                                                                                                  //     with x = RadiationUseEfficiency * PAR irradiance and c = maximum (saturation) AssimilationRate
   double PHCH1Reference =
     SSLAE * vc_AssimilationRateReference * vc_EffectiveDayLength * XReference / (1.0 + XReference);
 
@@ -3183,396 +3193,65 @@ void CropModule::fc_CropPhotosynthesis(double vw_MeanAirTemperature,
     }
   }
 
-  double vc_PhotoTemperature, vc_NightTemperature, vc_NormalisedDayLength;
-#pragma region hourly photosynthesis
-  double dailyGP, dailyGPRef;
-  if (cropPs.__enable_hourly_photosynthesis__) {
-    // const hPhoto::unit hourly_data_in_unit = hPhoto::unit::umolpm2ps; // FS: depends on input data
-    const double parfrac = 0.45;
-    const hPhoto::unit out_unit = hPhoto::unit::Jpm2ps; // hPhoto::unit::MJpm2ps;
-    const bool kgpha = true;
-    //using namespace hPhoto;
+  // daily GrossCO2Assimilation, multiplication with stress factors FieldCOnditionModifier, vc_CropFrostRedux, vc_OxygenDeficit, vc_TranspirationDeficit) and mainenance respiration
 
-    bool cscor = true;   // circumsolar correction for fraction diffuse
-    bool parcor = true;  // PAR wavelenghts correction for fraction diffuse
-    /*@ToDo FS: With active Agri-PV shading addon, enforce using PAR direct and PAR diffuse based on corrected fraction diffuse
-    //     otherwise, since both often mostly cancel out, they can also be set to false to save computation time
-    if (__enable_agripv_addon__) {
-      cscor = true;   
-      parcor = true;  
-    }
-    */
+  // Calculation of photosynthesis rate from [kg CO2 ha-1 d-1] to [kg CH2O ha-1 d-1]
+  vc_GrossPhotosynthesis = vc_GrossCO2Assimilation * 30.0 / 44.0;
 
-    if (cultivarPs.pc_EmpiricalExtinctionCoeffDiffuse < 0) {
-      debug() << "Detected negative value for parameter EmpiricalExtinctionCoeffDiffuse. "
-              << "This is most likely due to no value or an incorrect value in the crop specific value for EmpiricalExtinctionCoeffDiffuse in the json files monica-parameter directory. "
-              << "The user has to specify this parameter for each crop in the corresponding json file!" << endl;
-      throw runtime_error ("Negative value for parameter EmpiricalExtinctionCoeffDiffuse not allowed!");
-    }
+  // Calculation of photosynthesis rate from [kg CO2 ha-1 d-1]  to [mol m-2 s-1] or [cm3 cm-2 s-1]
+  vc_GrossPhotosynthesis_mol = vc_GrossCO2Assimilation * 22414.0 / (10.0 * 3600.0 * 24.0 * 44.0);
+  vc_GrossPhotosynthesisReference_mol = vc_GrossCO2AssimilationReference * 22414.0 / (10.0 * 3600.0 * 24.0 * 44.0);
 
-    // empirical extinction coefficient fo diffuse radiation, crop-dependent (and maybe even development stage dependent in some cases)
-    double kdf = cultivarPs.pc_EmpiricalExtinctionCoeffDiffuse;
-    double kdfRef = 0.6;  // FS: using default kdf of 0.6 for grassland for now
-                          //     also tested 0.7, since ET0 is only 12cm high grass by definition, which should be a bit more planophile; however, this didn't make any noticable difference
+  // Converting photosynthesis rate from [kg CO2 ha leaf-1 d-1] to [kg CH2O ha-1  d-1]
+  vc_Assimilates = vc_GrossCO2Assimilation * 30.0 / 44.0;
 
-    vector<double> hourlyGlobrad;
-    vector<double> hourlyExtrarad;
-    vector<double> hourlySolarEl;
-    vector<double> hourlyAirT;
-    vector<double> hourlyIdif; 
-    vector<double> hourlyIdir;
+  // reduction value for assimilate amount to simulate field conditions;
+  vc_Assimilates *= pc_FieldConditionModifier;
 
-    int vs_JulianDay = currentDate.julianDay();
+  // reduction value for assimilate amount to simulate frost damage;
+  vc_Assimilates *= vc_CropFrostRedux;
 
-    auto current_isodate = currentDate.toIsoDateString();  // generate idsodate string
+  //MP: added reduction value for assimilate amount to simulate waterlogging;
+  vc_Assimilates *= vc_OxygenDeficit;
 
-    /*FS: Maybe even add sub-hourly option in the future if needed?
-    //    implementation idea see algorithms::cloudAmount2globalRadiation
-    for (int hs = 1; hs <= 48; hs++) {
-    double t = 24.0 * (double(hs) - 1.0) / 48.0;    // (24.0/48.0) is 0.5h, so iterate hs from 1 to std::floor(24.0, 0.5)? Also check with agri-pv simulation time step
-    // double step = 24.0 / double(48);
-    // for (int hs = 0; hs < 48; ++hs) {
-    //   double t = step * (double(hs));
-    ...
-    */
-
-    int sunriseH = 0, sunsetH = 0;  //FS: defined in a way that sunrise is included in daytime (sun_el > 0) and sunset is excluded from daytime (including both time steps might otherwise lead to overestimation of irradiance)
-    for (int h = 0; h < 24; ++h) {
-      double sun_el, hgr;
-      if (!cropPs.__hourly_in_data__.empty()) {  // hourly air temperature and diffuse and direct irradiance input from file
-        // generate isodate string
-        auto sep = h < 10 ? "T0" : "T";
-        auto isodateformat_end = ":00:00";
-        auto current_isodatetime = current_isodate + sep + to_string(h) + isodateformat_end;
-
-        // read hourly data from json object dictionary __hourly_in_data__
-        auto hourly_data_in = cropPs.__hourly_in_data__.at(current_isodatetime).array_items();
-        double airT_h = hourly_data_in.at(0).number_value();
-        double iDif_h =hourly_data_in.at(1).number_value();
-        double iDir_h = hourly_data_in.at(2).number_value();
-        hourlyAirT.push_back(airT_h);
-        hourlyIdif.push_back(iDif_h);
-        hourlyIdir.push_back(iDir_h);
-        hgr = iDif_h + iDir_h;            // global radiation for the hour
-
-        // calculate solar position based on actual time (isodate string)
-        double vs_Longitude = cropPs.__longitude__;
-        assert((vs_Longitude > -180.) && (vs_Longitude < 180.));
-        int UTC_offset = ((cropPs.__UTC_offset__ > -13) && (cropPs.__UTC_offset__ < 15)) 
-          ? cropPs.__UTC_offset__
-          : static_cast<int>(std::floor(vs_Longitude / 15.0 + 0.5));  // theoretical time zone central meridian local time fallback (in case cropPs.__UTC_offset__ contains unexpected values)
-        assert((UTC_offset > -13) && (UTC_offset < 15));
-        double t = double(h); // +/- 0.5;  // FS: this actually depends on the timestamp labeling definition used for the read in hourly data:
-                                           //     +0.0 for instantaneous or centered interval
-                                           //     -0.5 for previous-hour accumulation [t-1h, t]; however, this would also require using vs_JulianDay - 1
-                                           //     +0.5 for next-hour accumulation [t, t+1h]
-        solar_position_result sunpos = solar_position(vs_Latitude, vs_Longitude, vs_JulianDay, t, UTC_offset, true);
-        sun_el = (sunpos.el_rad > hPhoto::eps) ? sunpos.el_rad : 0.;
-      } else {
-        sun_el = solarElevation(h, vs_Latitude, vs_JulianDay);
-        sun_el = (sun_el > hPhoto::eps) ? sun_el : 0.;
-        hgr = hourlyRad(vc_GlobalRadiation, vs_Latitude, vs_JulianDay, h); // FS: adjust hourlyRad function in the future; harmonize with solarElevation function?
-
-        if (hgr > 0) assert(sun_el > 0);
-
-        hourlyGlobrad.push_back(hgr);
-        hourlyExtrarad.push_back(hourlyRad(vc_ExtraterrestrialRadiation, vs_Latitude, vs_JulianDay, h));
-      }
-      sunriseH = ((sun_el > 0) && (sunriseH == 0)) ? h : sunriseH;
-      sunsetH = ((!hourlySolarEl.empty()) &&
-                (sun_el <= hPhoto::eps) &&
-                (hourlySolarEl.back() > hPhoto::eps)
-                ) ? h : sunsetH;
-      hourlySolarEl.push_back(sun_el);
-    }
-
-    if (cropPs.__hourly_in_data__.empty()) {
-      for (int h = 0; h < 24; ++h) {
-        hourlyAirT.push_back(hourlyT(vw_MinAirTemperature, vw_MaxAirTemperature, h, sunriseH));
-      }
-    } else {
-      if (hourlyAirT.size() != 24) {
-        throw runtime_error("Expected 24 hourly temperature values in hourly input data!");
-      }
-    }
-
-
-    // vector<double> hourlyGrossCO2Assimilation, hourlyGrossCO2AssimilationReference;
-    dailyGP = 0.;
-    dailyGPRef = 0.;
-    // hourly overclocked photosynthesis loop
-    for (int h = 0; h < 24; ++h) {  //for (int h = sunriseH; h < sunsetH; ++h) {
-      // hourly inputs needed for photosynthesis
-      hp hp_in;
-      // can sigma be expressed through pc_CanopyReflectionCoeff?
-      // double vc_NetRadiationUseEfficiency = (1.0 - pc_CanopyReflectionCoeff) * vc_RadiationUseEfficiency;
-      hp_in.solarEl = hourlySolarEl.at(h);
-      hp_in.extraRad = hourlyExtrarad.at(h);
-
-      bool is_daytime = ((h >= sunriseH) && (h < sunsetH)) ? true : false;
-
-      // hourly weather data
-      double inst_diff_rad, inst_dir_rad, hourlyPhoto, hourlyPhotoRef;
-      // double inst_glob_rad;
-      double hourlyPhoto_, hourlyPhotoRef_;  // FS: DEBUG only !!!
-      if (!cropPs.__hourly_in_data__.empty()) { // hourly diffuse and direct irradiance input from file
-        //direct && diffuse
-        inst_diff_rad = hourlyIdif.at(h);
-        inst_dir_rad = hourlyIdir.at(h);
-        inst_diff_rad = (inst_diff_rad <= 0) ? 0. : hPhoto::convert_MJpm2ps_to_unit(inst_diff_rad, out_unit);
-        inst_dir_rad = (inst_dir_rad <= 0) ? 0. : hPhoto::convert_MJpm2ps_to_unit(inst_dir_rad, out_unit);
-        // inst_glob_rad = inst_diff_rad + inst_dir_rad;
-
-        // // PAR fraction
-        // if (hourly_data_in_unit != hPhoto::unit::umolpm2ps) {
-        //   inst_diff_rad *= parfrac;
-        //   inst_dir_rad *= parfrac;
-        //   // inst_glob_rad *= parfrac;
-        // }
-
-      } else {
-        hp_in.globalRad = hourlyGlobrad.at(h);
-        if (hp_in.globalRad <= 0) {
-          inst_diff_rad = 0.;
-          inst_dir_rad = 0.;
-        } else {
-          // hp_in.extraRad = hourlyExtrarad.at(h);
-          auto PAR_rad = PAR_radiation(hp_in.globalRad, hp_in.extraRad, hp_in.solarEl, cscor, parcor, parfrac, out_unit);
-          inst_diff_rad = PAR_rad.diffuse; // (unit ground area)
-          inst_dir_rad = PAR_rad.direct;   // (unit ground area)
-        }
-      }
-      hp_in.leafT = hourlyAirT.at(h); // FS: using air temperature for now !!!
-
-      // hourly photosynthesis
-      assert(inst_diff_rad >= 0);
-      assert(inst_dir_rad >= 0);
-      if ((inst_diff_rad <= 0) && (inst_dir_rad <= 0)) {
-        // no need to calculate anything
-        hourlyPhoto = 0.;
-        hourlyPhotoRef = 0.;
-      } else {
-        double vc_AssimilationRate_hourly, vc_AssimilationRateReference_hourly, vc_RadiationUseEfficiency_hourly, vc_RadiationUseEfficiencyReference_hourly;
-        if (pc_CarboxylationPathway == 1) {
-          double Ci = Ci_empirical(hp_in.leafT, vw_AtmosphericCO2Concentration);
-          // _cropPhotosynthesisResults.ci = Ci;
-
-          double Oi = Oi_empirical(hp_in.leafT);
-          // _cropPhotosynthesisResults.oi = Oi * 1000.0;  // mmol -> umol
-
-          auto A_rub_res = A_rubisco(hp_in.leafT, Ci, Oi, _cropPhotosynthesisResults);
-          vc_AssimilationRate_hourly = A_rub_res.vc_AssimilationRate;                               // A_m
-          vc_AssimilationRateReference_hourly = A_rub_res.vc_AssimilationRateReference;             // A_mRef
-          vc_RadiationUseEfficiency_hourly = A_rub_res.vc_RadiationUseEfficiency;                   // espilon
-          vc_RadiationUseEfficiencyReference_hourly = A_rub_res.vc_RadiationUseEfficiencyReference; // epsilonRef
-        } else {
-          double t_response = WangEngelTemperatureResponse(hp_in.leafT,
-                                          pc_MinimumTemperatureForAssimilation,
-                                          pc_OptimumTemperatureForAssimilation,
-                                          pc_MaximumTemperatureForAssimilation,
-                                          1.0);
-          vc_AssimilationRate_hourly = pc_MaxAssimilationRate * t_response;                         // A_m
-          vc_AssimilationRateReference_hourly = pc_ReferenceMaxAssimilationRate * t_response;       // A_mRef
-          vc_RadiationUseEfficiency_hourly = pc_DefaultRadiationUseEfficiency;                      // epsilon
-          vc_RadiationUseEfficiencyReference_hourly = pc_DefaultRadiationUseEfficiency;             // epsilonRef
-        }
-
-        /* @ToDo FS: for Agri-PV, adjust hourly direct and diffuse radiation based on factors from Agri-PV shading model
-        if (__enable_agripv_addon__) {
-          auto inst_glob_rad = inst_diff_rad + inst_dir_rad;  // inst_glob_rad without Agri-PV influence
-          auto [dir_rad_factor, diff_rad_factor] AgriPV_shading(..., cropheight);
-          inst_diff_rad *= diff_rad_factor;
-          inst_dir_rad *= dir_rad_factor;
-          auto glob_rad_factor = (inst_diff_rad + inst_dir_rad) / inst_glob_rad // (inst_glob_rad with Agri-PV) / (inst_glob_rad without Agri-PV)
-          // @ToDo FS: glob_rad_factor should then also be made available outside the photosyntheisis in order to allow e.g. for shading the soil as well to ensure reduced soil ET; check order of processes in step to ensure that glob_rad_factor can be applied to all
-          assert(abs((inst_glob_rad * glob_rad_factor) - (inst_diff_rad + inst_dir_rad)) < hPhoto::eps)
-
-        }
-        */
-
-        if (vc_CuttingDelayDays > 0) {
-          vc_AssimilationRate_hourly = 0.1;
-        }
-
-        vc_AssimilationRate_hourly = max(0.1, vc_AssimilationRate_hourly);
-        vc_AssimilationRateReference_hourly = max(0.1, vc_AssimilationRateReference_hourly);
-        
-        // [J m-2 h-1] -> [J m-2 s-1]
-        inst_diff_rad /= 3600;
-        inst_dir_rad /= 3600;
-
-        int style = 11; // style of the integration over all leaf angles (11 and 12 should have the highest consistency with daily MONICA)
-                        // 11 = rectangular hyperbola light response curve, custom implementation with custom leaf angle integration and numerical safeguards (inspired by style 1)
-                        // 12 = rectangular hyperbola light response curve, using 3pt gauss integration over leaf angles (inspired by style 2)
-        hourlyPhoto = hPhoto::Spitters_canop_photo_3p(hp_in.solarEl, vc_LeafAreaIndex, inst_dir_rad, inst_diff_rad, vc_AssimilationRate_hourly, vc_RadiationUseEfficiency_hourly, kdf, 0.2, kgpha, style);
-        hourlyPhotoRef = hPhoto::Spitters_canop_photo_3p(hp_in.solarEl, cropPs.pc_ReferenceLeafAreaIndex, inst_dir_rad, inst_diff_rad, vc_AssimilationRateReference_hourly, vc_RadiationUseEfficiencyReference_hourly, kdfRef, 0.2, kgpha, style);
-      
-        // @ToDo FS: test this
-        if (cropPs.__enable_hourly_outputs__) {
-          tout()
-            << currentDate.toIsoDateString()
-            << "," << h
-            << "," << speciesPs.pc_SpeciesId << "/" << cultivarPs.pc_CultivarId
-            << "," << hp_in.leafT
-            << "," << inst_diff_rad
-            << "," << inst_dir_rad
-            << "," << hp_in.solarEl * 180. / M_PI
-            << "," << hourlyPhoto
-            << "," << hourlyPhotoRef
-            << endl;
-        }
-      }
-      // hourlyGrossCO2Assimilation.push_back(hourlyPhoto);
-      // hourlyGrossCO2AssimilationReference.push_back(hourlyPhotoRef);
-      dailyGP += hourlyPhoto;
-      dailyGPRef += hourlyPhotoRef;
-
-      double vc_GrossCO2Assimilation_h = hourlyPhoto;
-      double vc_GrossCO2AssimilationReference_h = hourlyPhotoRef;
-
-      // Calculation of photosynthesis rate from [kg CO2 ha-1 d-1] to [kg CH2O ha-1 d-1]
-      double vc_GrossPhotosynthesis_h = vc_GrossCO2Assimilation_h * 30.0 / 44.0;
-
-      // Calculation of photosynthesis rate from [kg CO2 ha-1 d-1]  to [mol m-2 s-1] or [cm3 cm-2 s-1]
-      double vc_GrossPhotosynthesis_mol_h = vc_GrossCO2Assimilation_h * 22414.0 / (10.0 * 3600.0 * 24.0 * 44.0);
-      double vc_GrossPhotosynthesisReference_mol_h = vc_GrossCO2AssimilationReference_h * 22414.0 / (10.0 * 3600.0 * 24.0 * 44.0);
-
-      // Converting photosynthesis rate from [kg CO2 ha leaf-1 d-1] to [kg CH2O ha-1  d-1]
-      double vc_Assimilates_h = vc_GrossCO2Assimilation_h * 30.0 / 44.0;
-
-      // reduction value for assimilate amount to simulate field conditions;
-      vc_Assimilates_h *= pc_FieldConditionModifier;  // FS: keep daily field condition modifier for now
-
-      // reduction value for assimilate amount to simulate frost damage;
-      double vc_CropFrostRedux_h = vc_CropFrostRedux; // @ToDo FS: keep daily factor for now?
-      vc_Assimilates_h *= vc_CropFrostRedux_h;
-
-      vc_OxygenDeficit_h = vc_OxygenDeficit;   // @ToDo FS: keep daily factor for now?
-      //MP: added reduction value for assimilate amount to simulate waterlogging;
-      vc_Assimilates_h *= vc_OxygenDeficit_h;
-
-      // FS: is there a way to calculate the hourly TranspirationDeficit?
-
-      // vc_OxygenDeficit separates drought stress (ETa/Etp) from saturation stress.
-      // old VSWELL
-      double vc_DroughtStressThreshold_h = vc_OxygenDeficit_h < 1.0
-                                        ? 0.0
-                                        : pc_DroughtStressThreshold[vc_DevelopmentalStage];
-
-      // FS: vc_TranspirationDeficit seems to be calculated using fc_CropWaterUptake(soilColumn.vm_GroundwaterTableLayer, vw_GrossPrecipitation, vc_CurrentTotalTemperatureSum, vc_TotalTemperatureSum);
-      //     In step(...), the fc_CropWaterUptake(...) method is called after fc_CropPhotosynthesis, so the transpiration deficit of the previous day is used?
-      //     fc_CropWaterUptake(...) depends on vc_ReferenceEvapotranspiration(...), which depends on vc_GrossPhotosynthesisReference_mol for stomatal resistance calculations
-      //     Do we need hourly crop water uptake calculations here, maybe even an hourly step() method to solve this in a clean way?
-      if (vc_TranspirationDeficit_h < vc_DroughtStressThreshold_h) {//MP: Access point for drought optimisation
-          vc_Assimilates_h *= vc_TranspirationDeficit_h;  // vc_DroughtStressThreshold; // MP:changed to exclude division
-      }
-
-
-      double vc_GrossAssimilates_h = vc_Assimilates_h;
-
-      // ####################################################################################
-      // hourly maintenance respiration (simplified; inspired by AGROSIM / daily MONICA code)
-      // ####################################################################################
-      // FS: In theory, there should be no need for weighting day and night durations if each hour is calculated separately (using hour-specific temperatures).
-      // @ToDo FS: test if this makes a difference
-      double vc_MaintenanceRespirationSum_h = 0.0;  // this is a sum over plant organs (not over time!)
-      // AGOSIM night and day maintenance and growth respiration
-      for (int i_Organ = 0; i_Organ < pc_NumberOfOrgans; i_Organ++) {
-        vc_MaintenanceRespirationSum_h += vc_OrganGreenBiomass[i_Organ] * pc_OrganMaintenanceRespiration[i_Organ]; // [kg CH2O ha-1]
-                                      // * vc_ActiveFraction[i_Organ]; wenn nicht schon durch acc dead matter abgedeckt
-      }
-      double vc_MaintenanceRespiration_h = vc_MaintenanceRespirationSum_h * pow(2.0, (pc_MaintenanceRespirationParameter_1 *
-                                                                                    (hp_in.leafT -  // FS: for now, this is air temperature; maybe use canopy temperature or use organ-specific temperature and put this in the for (int i_Organ = 0; i_Organ < pc_NumberOfOrgans; i_Organ++) loop as well?
-                                                                                      pc_MaintenanceRespirationParameter_2))) / 12.0;  // @todo: [g m-2] --> [kg ha-1]
-
-      double vc_MaintenanceRespirationAS_h = vc_MaintenanceRespiration_h; // [kg CH2O ha-1]
-      vc_Assimilates_h -= vc_MaintenanceRespiration_h; // [kg CH2O ha-1]
-
-
-      // accumulation of daily values
-      vc_GrossCO2Assimilation += vc_GrossCO2Assimilation_h;
-      vc_GrossPhotosynthesis += vc_GrossPhotosynthesis_h;
-      vc_GrossPhotosynthesisReference_mol += vc_GrossPhotosynthesisReference_mol_h;
-      vc_Assimilates += vc_Assimilates_h;
-      vc_GrossAssimilates += vc_GrossAssimilates_h;
-      vc_MaintenanceRespirationAS += vc_MaintenanceRespirationAS_h;
-    }
-
-    double _mean_of_hourlyAirT = accumulate(hourlyAirT.begin(), hourlyAirT.end(), 0.) / hourlyAirT.size();  //FS: DEBUG only so far; when hourly data is being read in, should something like this maybe replace vw_MeanAirTemperature ???
-    auto [_min_of_hourlyAirT, _max_of_hourlyAirT] = minmax_element(hourlyAirT.begin(), hourlyAirT.end());   //FS: DEBUG only so far; when hourly data is being read in, should something like this maybe replace vw_MinAirTemperature an vw_MaxAirTemperature ???
-
-    // calculate variables needed for respiration AGROSIM
-    vector<double> hourlyAirT_day = vector<double>(hourlyAirT.begin()+sunriseH, hourlyAirT.begin()+sunsetH);  //FS: consistency: hourlyAirT.begin()+sunsetH+1 if including sunsetH
-    vector<double> hourlyAirT_night = vector<double>(hourlyAirT.begin(), hourlyAirT.begin()+sunriseH);
-    hourlyAirT_night.insert(hourlyAirT_night.end(), hourlyAirT.begin()+sunsetH, hourlyAirT.end());            //FS: consistency: hourlyAirT.begin()+sunsetH+1 if including sunsetH
-    vc_NightTemperature_ = accumulate(hourlyAirT_night.begin(), hourlyAirT_night.end(), 0.) / hourlyAirT_night.size();
-    if (!hourlyAirT_day.empty()) {
-      vc_PhotoTemperature_ = accumulate(hourlyAirT_day.begin(), hourlyAirT_day.end(), 0.) / hourlyAirT_day.size();
-    } else {
-      vc_PhotoTemperature_ = vc_NightTemperature_;
-    }
-    vc_PhotoperiodicDaylength_ = hourlyAirT_day.size(); //FS: what is the difference between the daylenght variables? e.g. vc_PhotoperiodicDaylength, vc_AstronomicDayLenght, ...
-
-#pragma endregion hourly photosynthesis
-  } else {  // daily GrossCO2Assimilation, multiplication with stress factors FieldCOnditionModifier, vc_CropFrostRedux, vc_OxygenDeficit, vc_TranspirationDeficit) and mainenance respiration
-
-    // Calculation of photosynthesis rate from [kg CO2 ha-1 d-1] to [kg CH2O ha-1 d-1]
-    vc_GrossPhotosynthesis = vc_GrossCO2Assimilation * 30.0 / 44.0;
-
-    // Calculation of photosynthesis rate from [kg CO2 ha-1 d-1]  to [mol m-2 s-1] or [cm3 cm-2 s-1]
-    vc_GrossPhotosynthesis_mol = vc_GrossCO2Assimilation * 22414.0 / (10.0 * 3600.0 * 24.0 * 44.0);
-    vc_GrossPhotosynthesisReference_mol = vc_GrossCO2AssimilationReference * 22414.0 / (10.0 * 3600.0 * 24.0 * 44.0);
-
-    // Converting photosynthesis rate from [kg CO2 ha leaf-1 d-1] to [kg CH2O ha-1  d-1]
-    vc_Assimilates = vc_GrossCO2Assimilation * 30.0 / 44.0;
-
-    // reduction value for assimilate amount to simulate field conditions;
-    vc_Assimilates *= pc_FieldConditionModifier;
-
-    // reduction value for assimilate amount to simulate frost damage;
-    vc_Assimilates *= vc_CropFrostRedux;
-
-    //MP: added reduction value for assimilate amount to simulate waterlogging;
-    vc_Assimilates *= vc_OxygenDeficit;
-
-    if (vc_TranspirationDeficit < vc_DroughtStressThreshold) {//MP: Access point for drought optimisation
-        vc_Assimilates = vc_Assimilates * vc_TranspirationDeficit;  // vc_DroughtStressThreshold; // MP:changed to exclude division
-    }
-
-    vc_GrossAssimilates = vc_Assimilates;
-
-    // ########################################################################
-    // #                AGROSIM                 #
-    // ########################################################################
-
-    vc_PhotoTemperature = vw_MaxAirTemperature - ((vw_MaxAirTemperature - vw_MinAirTemperature) / 4.0);
-    vc_NightTemperature = vw_MinAirTemperature + ((vw_MaxAirTemperature - vw_MinAirTemperature) / 4.0);
-
-    double vc_MaintenanceRespirationSum = 0.0;
-    // AGOSIM night and day maintenance and growth respiration
-    for (int i_Organ = 0; i_Organ < pc_NumberOfOrgans; i_Organ++) {
-      vc_MaintenanceRespirationSum +=
-          vc_OrganGreenBiomass[i_Organ] * pc_OrganMaintenanceRespiration[i_Organ]; // [kg CH2O ha-1]
-      // * vc_ActiveFraction[i_Organ]; wenn nicht schon durch acc dead matter abgedeckt
-    }
-
-    vc_NormalisedDayLength = 2.0 - (vc_PhotoperiodicDaylength / 12.0);
-
-    double vc_PhotoMaintenanceRespiration = vc_MaintenanceRespirationSum * pow(2.0,
-                                                                              (pc_MaintenanceRespirationParameter_1 *
-                                                                                (vc_PhotoTemperature -
-                                                                                pc_MaintenanceRespirationParameter_2))) *
-                                            (2.0 - vc_NormalisedDayLength); // @todo: [g m-2] --> [kg ha-1]
-
-    double vc_DarkMaintenanceRespiration = vc_MaintenanceRespirationSum * pow(2.0, (pc_MaintenanceRespirationParameter_1 *
-                                                                                    (vc_NightTemperature -
-                                                                                    pc_MaintenanceRespirationParameter_2))) *
-                                          vc_NormalisedDayLength; // @todo: [g m-2] --> [kg ha-1]
-
-    vc_MaintenanceRespirationAS = vc_PhotoMaintenanceRespiration + vc_DarkMaintenanceRespiration; // [kg CH2O ha-1]
-
-    vc_Assimilates -= vc_PhotoMaintenanceRespiration + vc_DarkMaintenanceRespiration; // [kg CH2O ha-1]
+  if (vc_TranspirationDeficit < vc_DroughtStressThreshold) {//MP: Access point for drought optimisation
+      vc_Assimilates = vc_Assimilates * vc_TranspirationDeficit;  // vc_DroughtStressThreshold; // MP:changed to exclude division
   }
+
+  vc_GrossAssimilates = vc_Assimilates;
+
+  // ########################################################################
+  // #                AGROSIM                 #
+  // ########################################################################
+
+  double vc_PhotoTemperature = vw_MaxAirTemperature - ((vw_MaxAirTemperature - vw_MinAirTemperature) / 4.0);
+  double vc_NightTemperature = vw_MinAirTemperature + ((vw_MaxAirTemperature - vw_MinAirTemperature) / 4.0);
+
+  double vc_MaintenanceRespirationSum = 0.0;
+  // AGOSIM night and day maintenance and growth respiration
+  for (int i_Organ = 0; i_Organ < pc_NumberOfOrgans; i_Organ++) {
+    vc_MaintenanceRespirationSum +=
+        vc_OrganGreenBiomass[i_Organ] * pc_OrganMaintenanceRespiration[i_Organ]; // [kg CH2O ha-1]
+    // * vc_ActiveFraction[i_Organ]; wenn nicht schon durch acc dead matter abgedeckt
+  }
+
+  double vc_NormalisedDayLength = 2.0 - (vc_PhotoperiodicDaylength / 12.0);
+
+  double vc_PhotoMaintenanceRespiration = vc_MaintenanceRespirationSum * pow(2.0,
+                                                                            (pc_MaintenanceRespirationParameter_1 *
+                                                                              (vc_PhotoTemperature -
+                                                                              pc_MaintenanceRespirationParameter_2))) *
+                                          (2.0 - vc_NormalisedDayLength); // @todo: [g m-2] --> [kg ha-1]
+
+  double vc_DarkMaintenanceRespiration = vc_MaintenanceRespirationSum * pow(2.0, (pc_MaintenanceRespirationParameter_1 *
+                                                                                  (vc_NightTemperature -
+                                                                                  pc_MaintenanceRespirationParameter_2))) *
+                                        vc_NormalisedDayLength; // @todo: [g m-2] --> [kg ha-1]
+
+  vc_MaintenanceRespirationAS = vc_PhotoMaintenanceRespiration + vc_DarkMaintenanceRespiration; // [kg CH2O ha-1]
+
+  vc_Assimilates -= vc_PhotoMaintenanceRespiration + vc_DarkMaintenanceRespiration; // [kg CH2O ha-1]
+
 
   // AGROSIM night and day temperatures from hourly photosynthesis
   if (cropPs.__enable_hourly_photosynthesis__ && cropPs.__enable_hourly_respiration__) {
@@ -5043,6 +4722,16 @@ void CropModule::fc_CropWaterUptake(size_t vc_GroundwaterTable,
   }
 }
 
+/**
+ * @brief daily interception calculation
+ * 
+ * @param vw_GrossPrecipitation 
+ * @param (modified internal state in place) vc_InterceptionStorage
+ * @param (modified internal state in place) vc_NetPrecipitation
+ * 
+ * @see CropModule::fc_CropWaterUptake
+ * @see CropModule::fc_CropWaterUptake_h
+ */
 void CropModule::fc_CropInterception(double vw_GrossPrecipitation) {
 
   // ################
@@ -5147,11 +4836,8 @@ void CropModule::fc_CropWaterUptake_h(size_t vc_GroundwaterTable,
     vc_PotentialTranspiration_h = vc_RemainingEvapotranspiration_h * vc_SoilCoverage; // [mm]
 
     for (size_t i_Layer = 0; i_Layer < vc_RootingZone; i_Layer++) {
-      double vc_AvailableWater_h =
-          soilColumn[i_Layer].vs_FieldCapacity() - soilColumn[i_Layer].vs_PermanentWiltingPoint();
-      double vc_AvailableWaterPercentage_h =
-          (soilColumn[i_Layer].get_Vs_SoilMoisture_m3() - soilColumn[i_Layer].vs_PermanentWiltingPoint()) /
-          vc_AvailableWater_h;
+      double vc_AvailableWater_h = soilColumn[i_Layer].vs_FieldCapacity() - soilColumn[i_Layer].vs_PermanentWiltingPoint();
+      double vc_AvailableWaterPercentage_h = (soilColumn[i_Layer].get_Vs_SoilMoisture_m3() - soilColumn[i_Layer].vs_PermanentWiltingPoint()) / vc_AvailableWater_h;
       if (vc_AvailableWaterPercentage_h < 0.0) {
         vc_AvailableWaterPercentage_h = 0.0;
       }
