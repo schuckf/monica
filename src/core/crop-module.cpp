@@ -1320,13 +1320,13 @@ void CropModule::step(double vw_MeanAirTemperature,
 #pragma region further hourly calculations
         // calculate reference evapotranspiration if not provided directly via climate files
         double vc_ReferenceEvapotranspiration_h;
-        double vw_ReferenceEvapotranspiration_h = -1.0; 
+        double vw_ReferenceEvapotranspiration_h = -1.0;
         if (vw_ReferenceEvapotranspiration_h < 0) {
           vc_ReferenceEvapotranspiration_h = fc_ReferenceEvapotranspiration_h(vw_MinAirTemperature, -1.0,
                                                                               vw_MeanAirTemperature,
                                                                               vw_WindSpeed, vw_WindSpeedHeight,
                                                                               vw_AtmosphericCO2Concentration,
-                                                                              hourlyExtrarad.at(h-3), hourlyExtrarad.at(sunsetH-3),
+                                                                              hourlyExtrarad.at(h), hourlyExtrarad.at(sunsetH-3),
                                                                               hourlyGlobrad.at(h), hourlyGlobrad.at(sunsetH-3),
                                                                               vc_GrossPhotosynthesisReference_mol_h, is_daytime,
                                                                               true);

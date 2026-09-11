@@ -226,4 +226,7 @@ _cmake_linux_release
 ##########
 
 .vscode/
+sim-out.csv
+sim-hp-out.csv
 sim-min-out.csv
+sim-min-hp-out.csv
