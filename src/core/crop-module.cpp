@@ -1300,7 +1300,7 @@ void CropModule::step(double vw_MeanAirTemperature,
         // //     However, I think there is little we can do about it now (better process understanding or more quantitative data on this required).
         // } else ...
 
-        double vc_MaintenanceRespirationAS_h;
+        double vc_MaintenanceRespirationAS_h = 0.0;
         if (cropPs.__enable_hourly_respiration__) {
           // ####################################################################################
           // hourly maintenance respiration (simplified; inspired by AGROSIM / daily MONICA code)
@@ -1543,9 +1543,9 @@ void CropModule::step(double vw_MeanAirTemperature,
         vc_ReferenceEvapotranspiration = vw_ReferenceEvapotranspiration;
       }
       fc_CropWaterUptake(soilColumn.vm_GroundwaterTableLayer,
-                        vw_GrossPrecipitation,
-                        vc_CurrentTotalTemperatureSum,
-                        vc_TotalTemperatureSum);  // FS: This calculates vc_TranspirationDeficit, which affects
+                         vw_GrossPrecipitation,
+                         vc_CurrentTotalTemperatureSum,
+                         vc_TotalTemperatureSum);  // FS: This calculates vc_TranspirationDeficit, which affects
                                                   //     CropModule::fc_CropDevelopmentalStage(...) and CropModule::fc_DroughtImpactOnFertility()
     }
 
@@ -1557,6 +1557,26 @@ void CropModule::step(double vw_MeanAirTemperature,
     //           - vc_TranspirationDeficit is calculated after CropModule::fc_CropPhotosynthesis(...) via CropModule::fc_CropWaterUptake(...),
     //             so it applies the drought stress based on the previous time step? -> hourly version fc_CropWaterUptake_h(...) placed inside
     //             the hourly loop and calculated averaged transpiration deficit for the day afterwards for use with other (daily) stress factors
+
+
+    ////////// for comparison/debugging only
+    double vc_ReferenceEvapotranspiration_na;
+    // calculate reference evapotranspiration if not provided directly via climate files
+    if (vw_ReferenceEvapotranspiration < 0) {
+      vc_ReferenceEvapotranspiration_na = fc_ReferenceEvapotranspiration_notApplied(vw_MaxAirTemperature,
+                                                                      vw_MinAirTemperature,
+                                                                      vw_RelativeHumidity,
+                                                                      vw_MeanAirTemperature,
+                                                                      vw_WindSpeed,
+                                                                      vw_WindSpeedHeight,
+                                                                      vw_AtmosphericCO2Concentration);
+    } else {
+      // use reference evapotranspiration from climate file
+      vc_ReferenceEvapotranspiration_na = vw_ReferenceEvapotranspiration;
+    }
+    auto [vc_Transpiration_na, vc_TranspirationDeficit_na] = fc_CropWaterUptake_notApplied(soilColumn.vm_GroundwaterTableLayer, vc_ReferenceEvapotranspiration_na, vc_InterceptionStorage, 6.5);
+    //////////
+
 
     fc_HeatStressImpact(vw_MaxAirTemperature,
                         vw_MinAirTemperature);  // FS: This calculates vc_CropHeatRedux, which affects CropModule::fc_CropDryMatter(...)
@@ -4506,6 +4526,143 @@ double CropModule::fc_ReferenceEvapotranspiration_h(double vw_DewAirTemperature,
   return vc_ReferenceEvapotranspiration_h;
 }
 
+
+/**
+ * @brief Reference evapotranspiration - FOR DEBUGGING/COMPARISON ONLY!
+ *
+ * A method following Penman-Monteith as described by the FAO in Allen
+ * RG, Pereira LS, Raes D, Smith M. (1998) Crop evapotranspiration.
+ * Guidelines for computing crop water requirements. FAO Irrigation and
+ * Drainage Paper 56, FAO, Roma
+ *
+ * The vc_StomataResistance is used internally only and does NOT update CropModule::vc_StomataResistance.
+ * 
+ * @param vs_HeightNN Height above sea level
+ * @param vw_MaxAirTemperature Maximal air temperature for the calculated day
+ * @param vw_MinAirTemperature Minimal air temperature for the calculated day
+ * @param vw_RelativeHumidity Relative humidity
+ * @param vw_MeanAirTemperature Mean air temperature
+ * @param vw_WindSpeed Spped of wind
+ * @param vw_WindSpeedHeight Height in which the wind speed has been measured *
+ * @param vc_GlobalRadiation Global radiation
+ * @param vw_AtmosphericCO2Concentration CO2 concentration in the athmosphere (needed for photosynthesis)
+ * @param vc_GrossPhotosynthesisReference_mol under well watered conditions
+ * @return Reference evapotranspiration
+ */
+double CropModule::fc_ReferenceEvapotranspiration_notApplied(double vw_MaxAirTemperature,
+                                                  double vw_MinAirTemperature,
+                                                  double vw_RelativeHumidity,
+                                                  double vw_MeanAirTemperature,
+                                                  double vw_WindSpeed,
+                                                  double vw_WindSpeedHeight,
+                                                  double vw_AtmosphericCO2Concentration) {
+  double vc_AtmosphericPressure; //[kPA]
+  double vc_PsycrometerConstant; //[kPA °C-1]
+  double vc_SaturatedVapourPressureMax; //[kPA]
+  double vc_SaturatedVapourPressureMin; //[kPA]
+  double vc_SaturatedVapourPressure; //[kPA]
+  double vc_VapourPressure; //[kPA]
+  double vc_SaturationDeficit; //[kPA]
+  double vc_SaturatedVapourPressureSlope; //[kPA °C-1]
+  double vc_WindSpeed_2m; //[m s-1]
+  double vc_AerodynamicResistance; //[s m-1]
+  double vc_SurfaceResistance; //[s m-1]
+  double vc_ReferenceEvapotranspiration; //[mm]
+  double vw_NetRadiation; //[MJ m-2]
+
+  double pc_SaturationBeta = cropPs.pc_SaturationBeta; // Original: Yu et al. 2001; beta = 3.5
+  double pc_StomataConductanceAlpha = cropPs.pc_StomataConductanceAlpha; // Original: Yu et al. 2001; alpha = 0.06
+  double pc_ReferenceAlbedo = cropPs.pc_ReferenceAlbedo; // FAO Green gras reference albedo from Allen et al. (1998)
+
+  // Calculation of atmospheric pressure
+  vc_AtmosphericPressure = 101.3 * pow(((293.0 - (0.0065 * vs_HeightNN)) / 293.0), 5.26);
+
+  // Calculation of psychrometer constant - Luchtfeuchtigkeit
+  vc_PsycrometerConstant = 0.000665 * vc_AtmosphericPressure;
+
+  // Calc. of saturated water vapour pressure at daily max temperature
+  vc_SaturatedVapourPressureMax = 0.6108 * exp((17.27 * vw_MaxAirTemperature) / (237.3 + vw_MaxAirTemperature));
+
+  // Calc. of saturated water vapour pressure at daily min temperature
+  vc_SaturatedVapourPressureMin = 0.6108 * exp((17.27 * vw_MinAirTemperature) / (237.3 + vw_MinAirTemperature));
+
+  // Calculation of the saturated water vapour pressure
+  vc_SaturatedVapourPressure = (vc_SaturatedVapourPressureMax + vc_SaturatedVapourPressureMin) / 2.0;
+
+  // Calculation of the water vapour pressure
+  if (vw_RelativeHumidity <= 0.0) {
+    // Assuming Tdew = Tmin as suggested in FAO56 Allen et al. 1998
+    vc_VapourPressure = vc_SaturatedVapourPressureMin;
+  } else {
+    vc_VapourPressure = vw_RelativeHumidity * vc_SaturatedVapourPressure;
+  }
+
+  // Calculation of the air saturation deficit
+  vc_SaturationDeficit = vc_SaturatedVapourPressure - vc_VapourPressure;
+
+  // Slope of saturation water vapour pressure-to-temperature relation
+  vc_SaturatedVapourPressureSlope =
+    (4098.0 * (0.6108 * exp((17.27 * vw_MeanAirTemperature) / (vw_MeanAirTemperature + 237.3)))) /
+    ((vw_MeanAirTemperature + 237.3) * (vw_MeanAirTemperature + 237.3));
+
+  // Calculation of wind speed in 2m height
+  vc_WindSpeed_2m = max(0.5, vw_WindSpeed * (4.87 / (log(67.8 * vw_WindSpeedHeight - 5.42))));
+  // 0.5 minimum allowed windspeed for Penman-Monteith-Method FAO
+
+  // Calculation of the aerodynamic resistance
+  vc_AerodynamicResistance = 208.0 / vc_WindSpeed_2m;
+
+  double vc_StomataResistance = 0.0;
+  if (vc_GrossPhotosynthesisReference_mol <= 0.0) {
+    vc_StomataResistance = 999999.9; // [s m-1]
+  } else {
+    if (pc_CarboxylationPathway == 1) {
+      vc_StomataResistance = // [s m-1]
+        (vw_AtmosphericCO2Concentration * (1.0 + vc_SaturationDeficit / pc_SaturationBeta)) /
+        (pc_StomataConductanceAlpha * vc_GrossPhotosynthesisReference_mol);
+    } else {
+      vc_StomataResistance = // [s m-1]
+        (vw_AtmosphericCO2Concentration * (1.0 + vc_SaturationDeficit / pc_SaturationBeta)) /
+        (pc_StomataConductanceAlpha * vc_GrossPhotosynthesisReference_mol);
+    }
+  }
+
+  vc_SurfaceResistance = vc_StomataResistance / 1.44;
+
+  // vc_SurfaceResistance = vc_StomataResistance / (vc_CropHeight * vc_LeafAreaIndex);
+
+  // vw_NetRadiation = vc_GlobalRadiation * (1.0 - pc_ReferenceAlbedo); // [MJ m-2]
+
+  double vc_ClearSkyShortwaveRadiation = (0.75 + 0.00002 * vs_HeightNN) * vc_ExtraterrestrialRadiation;
+
+  double vc_RelativeShortwaveRadiation = vc_ClearSkyShortwaveRadiation > 0
+                                           ? vc_GlobalRadiation / vc_ClearSkyShortwaveRadiation
+                                           : 0;
+
+  double vc_NetShortwaveRadiation = (1.0 - pc_ReferenceAlbedo) * vc_GlobalRadiation;
+
+  double pc_BolzmanConstant = 0.0000000049; // Bolzmann constant 4.903 * 10-9 MJ m-2 K-4 d-1
+  vw_NetRadiation = vc_NetShortwaveRadiation - (pc_BolzmanConstant * (pow((vw_MinAirTemperature + 273.16), 4.0) +
+                                                                      pow((vw_MaxAirTemperature + 273.16), 4.0)) / 2.0 *
+                                                (1.35 * vc_RelativeShortwaveRadiation - 0.35) *
+                                                (0.34 - 0.14 * sqrt(vc_VapourPressure)));
+
+  // Calculation of reference evapotranspiration
+  // Penman-Monteith-Method FAO
+  vc_ReferenceEvapotranspiration = ((0.408 * vc_SaturatedVapourPressureSlope * vw_NetRadiation) +
+                                    (vc_PsycrometerConstant * (900.0 / (vw_MeanAirTemperature + 273.0)) *
+                                     vc_WindSpeed_2m * vc_SaturationDeficit)) / (vc_SaturatedVapourPressureSlope +
+                                     vc_PsycrometerConstant * (1.0 +
+                                                               (vc_SurfaceResistance /
+                                                                vc_AerodynamicResistance)));
+
+  if (vc_ReferenceEvapotranspiration < 0.0) {
+    vc_ReferenceEvapotranspiration = 0.0;
+  }
+
+  return vc_ReferenceEvapotranspiration;
+}
+
 /**
  * @brief  Water uptake by the crop
  *
@@ -4742,6 +4899,9 @@ void CropModule::fc_CropWaterUptake(size_t vc_GroundwaterTable,
   }
 }
 
+
+
+
 /**
  * @brief daily interception calculation
  * 
@@ -4824,8 +4984,8 @@ void CropModule::fc_CropWaterUptake_h(size_t vc_GroundwaterTable,
 
   vc_PotentialEvapotranspiration_h = vc_ReferenceEvapotranspiration_h * vc_KcFactor; // [mm]
 
-  if (vc_PotentialEvapotranspiration_h > 1.5) {   // FS: using 1.5 mm h-1 for now; find a source for realistic maximal hourly potential crop ET
-    vc_PotentialEvapotranspiration_h = 1.5;
+  if (vc_PotentialEvapotranspiration_h > 1.0) {   // FS: using 1.0 mm h-1 for now; find a source for realistic maximal hourly potential crop ET
+    vc_PotentialEvapotranspiration_h = 1.0;
   }
 
   // FS: altered CropModule attrs here: vc_InterceptionStorage, vc_RemainingEvapotranspiration, vc_EvaporatedFromIntercept
@@ -4984,6 +5144,219 @@ void CropModule::fc_CropWaterUptake_h(size_t vc_GroundwaterTable,
     if (vm_GroundwaterDistance <= 1) vc_TranspirationDeficit_h = 1.0;
     if (!pc_WaterDeficitResponseOn) vc_TranspirationDeficit_h = 1.0;
   }
+}
+
+
+/**
+ * @brief  calculate hourly water uptake by the crop, without actually applying it - FOR DEBUGGING/COMPARISON ONLY!
+ *
+ *  In this function the potential transpiration calcuated from potential
+ *  evapotranspiration by soil cover fraction is reduced by water availability
+ *  in the soil accoridng to actaul water contents, root distribution and
+ *  root effectivity. The transpiration is NOT applied to the soil layers
+ *
+ * @param vs_NumberOfLayers
+ * @param vs_LayerThickness
+ * @param vc_GroundwaterTable
+ * @param vc_ReferenceEvapotranspiration
+ * @param vc_OxygenDeficit
+ * @param potET_limit                       using 6.5 mm d-1 or 1.0 mm h-1 for now; find a source for realistic maximal hourly potential crop ET
+ * @return vc_Transpiration, vc_TranspirationDeficit
+ */
+std::pair<std::vector<double>, double> CropModule::fc_CropWaterUptake_notApplied(const size_t vc_GroundwaterTable,
+                                                                                 const double vc_ReferenceEvapotranspiration,
+                                                                                 double vc_InterceptionStorage, //, double vc_OxygenDeficit) {
+                                                                                 const double potET_limit) {
+  size_t nols = soilColumn.vs_NumberOfLayers();
+  double layerThickness = soilColumn.vs_LayerThickness();
+  double vc_PotentialTranspirationDeficit = 0.0;         // [mm]
+  double vc_PotentialTranspiration = 0.0;                // [mm]
+  double vc_PotentialEvapotranspiration = 0.0;    // [mm]
+  double vc_TranspirationReduced = 0.0;                  // [mm]
+  double vc_ActualTranspiration = 0.0;                   // [mm]
+  double vc_RemainingTotalRootEffectivity = 0.0;    // [m]
+  double vc_CropWaterUptakeFromGroundwater = 0.0;   // [mm]
+  double vc_TotalRootEffectivity = 0.0;             // [m]
+  double vc_ActualTranspirationDeficit = 0.0;            // [mm]
+  double vc_RemainingEvapotranspiration = 0.0;
+
+  double vc_EvaporatedFromIntercept = 0.0;
+  double vc_TranspirationDeficit = 1.0;
+  std::vector<double> vc_Transpiration(vc_RootingZone, 0.0);
+  std::vector<double> vc_TranspirationRedux(vc_RootingZone, 0.0);
+
+  // ################
+  // # Interception #
+  // ################
+  // FS: moved to CropModule::fc_CropInterception(double vw_GrossPrecipitation)
+
+  // #################
+  // # Transpiration #
+  // #################
+
+  vc_PotentialEvapotranspiration = vc_ReferenceEvapotranspiration * vc_KcFactor; // [mm]
+
+  if (vc_PotentialEvapotranspiration > 1.0) {   
+    vc_PotentialEvapotranspiration = 1.0;
+  }
+
+  // FS: altered CropModule attrs here: vc_InterceptionStorage, vc_RemainingEvapotranspiration, vc_EvaporatedFromIntercept
+
+  vc_RemainingEvapotranspiration = vc_PotentialEvapotranspiration; // [mm]
+
+  // If crop holds intercepted water, first evaporation from crop surface
+  if (vc_InterceptionStorage > 0.0) {
+    if (vc_RemainingEvapotranspiration >= vc_InterceptionStorage) {
+      vc_RemainingEvapotranspiration -= vc_InterceptionStorage;
+      vc_EvaporatedFromIntercept = vc_InterceptionStorage;
+      vc_InterceptionStorage = 0.0;
+    } else {
+      vc_InterceptionStorage -= vc_RemainingEvapotranspiration;
+      vc_EvaporatedFromIntercept = vc_RemainingEvapotranspiration;
+      vc_RemainingEvapotranspiration = 0.0;
+    }
+  } else {
+    vc_EvaporatedFromIntercept = 0.0;
+  }
+
+  // FS: altered CropModule attrs here: vc_PotentialTranspiration, vc_TranspirationRedux, vc_RootEffectivity, vc_PotentialTranspirationDeficit
+
+  // if the plant has matured, no transpiration occurs!
+  if (vc_DevelopmentalStage < vc_FinalDevelopmentalStage) {
+    // if ((vc_CurrentTotalTemperatureSum / vc_TotalTemperatureSum) < 1.0){
+
+    vc_PotentialTranspiration = vc_RemainingEvapotranspiration * vc_SoilCoverage; // [mm]
+
+    for (size_t i_Layer = 0; i_Layer < vc_RootingZone; i_Layer++) {
+      double vc_AvailableWater = soilColumn[i_Layer].vs_FieldCapacity() - soilColumn[i_Layer].vs_PermanentWiltingPoint();
+      double vc_AvailableWaterPercentage = (soilColumn[i_Layer].get_Vs_SoilMoisture_m3() - soilColumn[i_Layer].vs_PermanentWiltingPoint()) / vc_AvailableWater;
+      if (vc_AvailableWaterPercentage < 0.0) {
+        vc_AvailableWaterPercentage = 0.0;
+      }
+      //MP: Where do all these numbers come from? Potential need for improvement of the numbers   // FS: [source missing]; these seem to be the hard-coded functions for the transpiration reduction factor and
+                                                                                                  //     for root water uptake efficiency (Fig 1 in https://zalf-rpm.github.io/monica-documentation/model_science/crop_processes/transpiration)
+      //This would be the access point for considering compensatory effects of increased/decreased water uptake from layers that hold enough water.
+      //An alternative approach for considering compensatory effects is to go through a soil water-dependent root penetration rate.
+      if (vc_AvailableWaterPercentage < 0.15) {//MP: Access point for drought optimisation (this could be extended for waterlogging), this is for very dry condtions
+        vc_TranspirationRedux[i_Layer] = vc_AvailableWaterPercentage * 3.0;        // []
+        vc_RootEffectivity[i_Layer] = 0.15 + 0.45 * vc_AvailableWaterPercentage / 0.15; // [] MP: this is essentially *3
+      } else if (vc_AvailableWaterPercentage < 0.3) {
+        vc_TranspirationRedux[i_Layer] = 0.45 + (0.25 * (vc_AvailableWaterPercentage - 0.15) / 0.15);
+        vc_RootEffectivity[i_Layer] = 0.6 + (0.2 * (vc_AvailableWaterPercentage - 0.15) / 0.15);
+      } else if (vc_AvailableWaterPercentage < 0.5) {//MP: ab hier hat das fast keinen Effekt mehr
+        vc_TranspirationRedux[i_Layer] = 0.7 + (0.275 * (vc_AvailableWaterPercentage - 0.3) / 0.2);
+        vc_RootEffectivity[i_Layer] = 0.8 + (0.2 * (vc_AvailableWaterPercentage - 0.3) / 0.2);
+      } else if (vc_AvailableWaterPercentage < 0.75) {//MP: ab hier ist nur mehr die Transpiration betroffen
+        vc_TranspirationRedux[i_Layer] = 0.975 + (0.025 * (vc_AvailableWaterPercentage - 0.5) / 0.25);
+        vc_RootEffectivity[i_Layer] = 1.0;
+      } else {
+        vc_TranspirationRedux[i_Layer] = 1.0;
+        vc_RootEffectivity[i_Layer] = 1.0;
+      }
+      if (vc_TranspirationRedux[i_Layer] < 0) {
+        vc_TranspirationRedux[i_Layer] = 0.0;
+      }
+      if (vc_RootEffectivity[i_Layer] < 0) {
+        vc_RootEffectivity[i_Layer] = 0.0;
+      }
+      if (i_Layer == vc_GroundwaterTable) { // old GRW
+        vc_RootEffectivity[i_Layer] = 0.5;
+      }
+      if (i_Layer > vc_GroundwaterTable) { // old GRW
+        vc_RootEffectivity[i_Layer] = 0.0;
+      }
+      if (((i_Layer + 1) * layerThickness) >= vs_MaxEffectiveRootingDepth) {
+        vc_RootEffectivity[i_Layer] = 0.0;
+      }
+
+      vc_TotalRootEffectivity += vc_RootEffectivity[i_Layer] * vc_RootDensity[i_Layer]; //[m m-3]
+      vc_RemainingTotalRootEffectivity = vc_TotalRootEffectivity;
+    }
+
+    // [TRANSPLANT SHOCK] Water Uptake Limitation.
+    // Limits the total active root water uptake effectivity proportional to the shock recovery efficiency factor.
+    if (vc_TransplantEfficiency < 1.0) {
+      vc_TotalRootEffectivity *= vc_TransplantEfficiency;
+      vc_RemainingTotalRootEffectivity = vc_TotalRootEffectivity;
+    }
+
+    // std::cout << setprecision(11) << "vc_TotalRootEffectivity: " << vc_TotalRootEffectivity << std::endl;
+    // std::cout << setprecision(11) << "vc_OxygenDeficit: " << vc_OxygenDeficit << std::endl;
+
+    for (size_t i_Layer = 0; i_Layer < nols; i_Layer++) {
+      if (i_Layer > min(vc_RootingZone, vc_GroundwaterTable + 1)) {
+        vc_Transpiration[i_Layer] = 0.0; //[mm]
+      } else {
+        vc_Transpiration[i_Layer] = vc_TotalRootEffectivity != 0.0
+                                    ? vc_PotentialTranspiration *
+                                      ((vc_RootEffectivity[i_Layer] * vc_RootDensity[i_Layer]) /
+                                       vc_TotalRootEffectivity) * vc_OxygenDeficit //MP: why is this not changing anything? (I think it would only change something for too dry conditions).
+                                    : 0;
+
+        // std::cout << setprecision(11) << "vc_Transpiration[i_Layer]: " << i_Layer << ", " << vc_Transpiration[i_Layer] << std::endl;
+        // std::cout << setprecision(11) << "vc_RootEffectivity[i_Layer]: " << i_Layer << ", " << vc_RootEffectivity[i_Layer] << std::endl;
+        // std::cout << setprecision(11) << "vc_RootDensity[i_Layer]: " << i_Layer << ", " << vc_RootDensity[i_Layer] << std::endl;
+
+        // [mm]
+      }
+    }
+
+    for (size_t i_Layer = 0; i_Layer < min(vc_RootingZone, vc_GroundwaterTable + 1); i_Layer++) {
+
+      vc_RemainingTotalRootEffectivity -= vc_RootEffectivity[i_Layer] * vc_RootDensity[i_Layer]; // [m m-3]
+
+      if (vc_RemainingTotalRootEffectivity <= 0.0) {
+        vc_RemainingTotalRootEffectivity = 0.00001;
+      }
+      if (((vc_Transpiration[i_Layer] / 1000.0) / layerThickness) >
+          ((soilColumn[i_Layer].get_Vs_SoilMoisture_m3() - soilColumn[i_Layer].vs_PermanentWiltingPoint()))) {
+        vc_PotentialTranspirationDeficit = (((vc_Transpiration[i_Layer] / 1000.0) / layerThickness) -
+                                            (soilColumn[i_Layer].get_Vs_SoilMoisture_m3() -
+                                             soilColumn[i_Layer].vs_PermanentWiltingPoint())) * layerThickness *
+                                           1000.0; // [mm]
+        if (vc_PotentialTranspirationDeficit < 0.0) {
+          vc_PotentialTranspirationDeficit = 0.0;
+        }
+        if (vc_PotentialTranspirationDeficit > vc_Transpiration[i_Layer]) {
+          vc_PotentialTranspirationDeficit = vc_Transpiration[i_Layer]; //[mm]
+        }
+      } else {
+        vc_PotentialTranspirationDeficit = 0.0;
+      }
+      double vc_TranspirationReduced = vc_Transpiration[i_Layer] * (1.0 - vc_TranspirationRedux[i_Layer]);
+
+      //! @todo Claas: How can we lower the groundwater table if crop water uptake is restricted in that layer?
+      double vc_ActualTranspirationDeficit = max(vc_TranspirationReduced, vc_PotentialTranspirationDeficit); //[mm]
+      if (vc_ActualTranspirationDeficit > 0.0) {
+        if (i_Layer < min(vc_RootingZone, vc_GroundwaterTable + 1)) {
+          for (size_t i_Layer2 = i_Layer + 1; i_Layer2 < min(vc_RootingZone, vc_GroundwaterTable + 1); i_Layer2++) {
+            vc_Transpiration[i_Layer2] += vc_ActualTranspirationDeficit *
+                                          (vc_RootEffectivity[i_Layer2] * vc_RootDensity[i_Layer2] /
+                                           vc_RemainingTotalRootEffectivity);
+          }
+        }
+      }
+      vc_Transpiration[i_Layer] = vc_Transpiration[i_Layer] - vc_ActualTranspirationDeficit;//MP: this is a key line for water stress response
+      if (vc_Transpiration[i_Layer] < 0.0) {
+        vc_Transpiration[i_Layer] = 0.0;
+      }
+      vc_ActualTranspiration += vc_Transpiration[i_Layer];
+      if (i_Layer == vc_GroundwaterTable) {
+        vc_CropWaterUptakeFromGroundwater = (vc_Transpiration[i_Layer] / 1000.0) / layerThickness; //[m3 m-3]
+      }
+    }
+
+    // FS: vc_TranspirationDeficit affects drought impact on fertility and potentially other CropModule methods as well
+
+    if (vc_PotentialTranspiration > 0) { vc_TranspirationDeficit = vc_ActualTranspiration / vc_PotentialTranspiration; }
+    else { vc_TranspirationDeficit = 1.0; }
+
+    int vm_GroundwaterDistance = (int) vc_GroundwaterTable - (int) vc_RootingDepth;
+    // std::cout << "vm_GroundwaterDistance: " << vm_GroundwaterDistance << std::endl;
+    if (vm_GroundwaterDistance <= 1) {vc_TranspirationDeficit = 1.0; }
+    if (!pc_WaterDeficitResponseOn) {vc_TranspirationDeficit = 1.0; }
+  }
+  return {vc_Transpiration, vc_TranspirationDeficit};
 }
 
 /**

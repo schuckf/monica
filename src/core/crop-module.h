@@ -246,6 +246,14 @@ public:
                                           double vc_GrossPhotosynthesisReference_mol_h, bool is_daytime,
                                           bool calc_soilHeatflux=true);
 
+  double fc_ReferenceEvapotranspiration_notApplied(double vw_MaxAirTemperature,
+                                        double vw_MinAirTemperature,
+                                        double vw_RelativeHumidity,
+                                        double vw_MeanAirTemperature,
+                                        double vw_WindSpeed,
+                                        double vw_WindSpeedHeight,
+                                        double vw_AtmosphericCO2Concentration);
+
   void fc_CropWaterUptake(size_t vm_GroundwaterTable,
                           double vw_GrossPrecipitation,
                           double vc_CurrentTotalTemperatureSum,
@@ -255,6 +263,11 @@ public:
 
   void fc_CropWaterUptake_h(size_t vm_GroundwaterTable,
                             double vc_ReferenceEvapotranspiration_h); //, double vc_OxygenDeficit_h);
+
+  std::pair<std::vector<double>, double> CropModule::fc_CropWaterUptake_notApplied(const size_t vc_GroundwaterTable,
+                                                                                   const double vc_ReferenceEvapotranspiration_h,
+                                                                                   const double vc_InterceptionStorage,
+                                                                                   const double potET_limit=6.5);
 
   void fc_CropNUptake(size_t vm_GroundwaterTable,
                       double /*vc_CurrentTotalTemperatureSum*/,
