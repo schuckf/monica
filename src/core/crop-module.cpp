@@ -1166,7 +1166,8 @@ void CropModule::step(double vw_MeanAirTemperature,
       vc_MaintenanceRespirationAS = 0.0;
       vector<double> hourly_KTkc_day;
       // vector<double> hourly_GP_day;
-      vector<double> hourly_TranspirationDeficit_day;
+      vector<double> hourly_ActualTranspirationDeficit_day;
+      vector<double> hourly_PotentialTranspirationDeficit_day;
 
       for (int h = 0; h < 24; ++h) {  // hourly overclocked loop
         bool is_daytime = ((h >= sunriseH) && (h < sunsetH)) ? true : false;
@@ -1302,11 +1303,6 @@ void CropModule::step(double vw_MeanAirTemperature,
         // ####################################################################################
         // hourly maintenance respiration (simplified; inspired by AGROSIM / daily MONICA code)
         // ####################################################################################
-        // FS: In theory, there should be no need for weighting day and night durations if each hour is calculated separately (using hour-specific temperatures).
-        //     Using hour-specific temperatures for all hourly overclocked processes should be more consistent here, unless the averaged day and night temperatures
-        //     approximate leaf temperature more accurately (they probably do not) or when the dampened minima and maxima resulting from averaging make more sense 
-        //     physiologically (maybe for frostkill and heat stress?)
-        // @ToDo FS: test if this makes a difference
         double vc_MaintenanceRespirationSum_h = 0.0;  // this is a sum over plant organs (not over time!)
         // AGOSIM night and day maintenance and growth respiration
         for (int i_Organ = 0; i_Organ < pc_NumberOfOrgans; i_Organ++) {
@@ -1319,13 +1315,6 @@ void CropModule::step(double vw_MeanAirTemperature,
 
         double vc_MaintenanceRespirationAS_h = vc_MaintenanceRespiration_h; // [kg CH2O ha-1]
         vc_Assimilates_h -= vc_MaintenanceRespiration_h; // [kg CH2O ha-1]
-
-
-        // @ToDo FS: Check again in which order the calculations make the most sense:
-        //           - some stress factors are taken from the day before, others calculated for each hour;
-        //           - Which ones should be applied before respiration, which ones after?
-        //               - for vc_ReferenceEvapotranspiration_h this should not matter since it takes vc_GrossPhotosynthesisReference_mol_h as input
-        //           - Also, some stress factors interact with each other ...
 
 
 #pragma region further hourly calculations
@@ -1349,13 +1338,14 @@ void CropModule::step(double vw_MeanAirTemperature,
         fc_CropWaterUptake_h(soilColumn.vm_GroundwaterTableLayer, vc_ReferenceEvapotranspiration_h);  //, vc_OxygenDeficit_h);
                                                                                                       // FS: This should calculate vc_TranspirationDeficit_h, which affects
                                                                                                       //     CropModule::fc_CropDevelopmentalStage(...) and CropModule::fc_DroughtImpactOnFertility()
-        // @ToDo FS: not sure yet if the water balance works corrctly -> check interaction with daily interception
+        // @ToDo FS: not sure yet if the water balance works corrctly -> teste if this works as intended
       
         // FS: do not change too much at once
         // fc_DroughtImpactOnFertility_h();      // = f(vc_TranspirationDeficit_h)
 
         // prepare aggregation back to daily time step
-        hourly_TranspirationDeficit_day.push_back(vc_TranspirationDeficit_h);
+        hourly_ActualTranspirationDeficit_day.push_back(vc_ActualTranspirationDeficit_h);
+        hourly_PotentialTranspirationDeficit_day.push_back(vc_PotentialTranspirationDeficit_h);
 
 #pragma endregion further hourly calculations
 
@@ -1370,8 +1360,9 @@ void CropModule::step(double vw_MeanAirTemperature,
 
       // aggregation back to daily time step, mean
       // daily transpiration deficit is needed for fc_DroughtImpactOnFertility(), which affects CropModule::fc_CropDryMatter(vw_MeanAirTemperature) via vc_DroughtImpactOnFertility
-      vc_TranspirationDeficit = accumulate(hourly_TranspirationDeficit_day.begin(), hourly_TranspirationDeficit_day.end(), 0.) / hourly_TranspirationDeficit_day.size();
-      // @ ToDo FS: Is mean good enough, or is a weighted mean (e.g. with hourly photosynthesis) required?
+      vc_ActualTranspirationDeficit = accumulate(hourly_ActualTranspirationDeficit_day.begin(), hourly_ActualTranspirationDeficit_day.end(), 0.);
+      vc_PotentialTranspirationDeficit = accumulate(hourly_PotentialTranspirationDeficit_day.begin(), hourly_PotentialTranspirationDeficit_day.end(), 0.);
+      vc_TranspirationDeficit = (vc_PotentialTranspirationDeficit > 0) ? vc_ActualTranspirationDeficit / vc_PotentialTranspirationDeficit : 1.0;
       // @ ToDo FS: Or should we calculate the daily vc_TranspirationDeficit in a similar way as in CropModule::fc_CropWaterUptake(...)? Would this maybe work by changing fc_CropWaterUptake(...)
       //            to a function that does not perform hidden modifications to claas or instance attrs. Instead, all inputs and outputs need to be provided and modification of CropModule attrs
       //            happens in a next step. That way, daily vc_TranspirationDeficit can be calculated without  modifying anything, and maybe additionally the code could even be applied to daily
@@ -4176,9 +4167,6 @@ pair<vector<double>, double> CropModule::calcRootDensityFactorAndSum() {
  * Guidelines for computing crop water requirements. FAO Irrigation and
  * Drainage Paper 56, FAO, Roma
  *
- * @todo FS: Why is there a mostly similar method SoilMoisture::ReferenceEvapotranspiration in soilmoisture.cpp, with its own astronomy code and fixed stomata resistance?
- *           Is that still used or is it legacy code? If it is still used, does that lead to inconsistencies?
- *
  * @param vs_HeightNN Height above sea level
  * @param vw_MaxAirTemperature Maximal air temperature for the calculated day
  * @param vw_MinAirTemperature Minimal air temperature for the calculated day
@@ -4402,7 +4390,7 @@ double CropModule::fc_ReferenceEvapotranspiration_h(double vw_DewAirTemperature,
   vc_AerodynamicResistance = 208.0 / vc_WindSpeed_2m;   // FS: 208.0 is the param assumed by FAO-56 for the reference crop!
 
   if (vc_GrossPhotosynthesisReference_mol_h <= 0.0) {
-    vc_StomataResistance = 999999.9; // [s m-1]         // FS: Does this lead to unrealistic base resistance at night for the hourly version?
+    vc_StomataResistance = 999999.9; // [s m-1]         // FS: Does this lead to unrealistic base resistance at night for the hourly version? -> check again if value 200 suggested by paper [source?] makes sense
   } else {
 
     // crop stomata resistance according to Yu et al. 2001 (FS: which Yu et al. 2001 publication?

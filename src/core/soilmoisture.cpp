@@ -1130,7 +1130,7 @@ void SoilMoisture::fm_Evapotranspiration(double vc_PercentageSoilCoverage, doubl
 
           // Transpiration is derived from ET0; Soil coverage and Kc factors
           // already considered in crop part!
-          vm_Transpiration[i_Layer] = monica.cropGrowth()->get_Transpiration(i_Layer);
+          vm_Transpiration[i_Layer] = monica.cropGrowth()->get_Transpiration(i_Layer);  // FS: this reads transpiration from the crop module
 
           //std::cout << setprecision(11) << "vm_Transpiration[i_Layer]: " << i_Layer << ", " << vm_Transpiration[i_Layer] << std::endl;
 
@@ -1150,7 +1150,7 @@ void SoilMoisture::fm_Evapotranspiration(double vc_PercentageSoilCoverage, doubl
         } // if(vc_DevelopmentalStage > 0)
 
         vm_Evapotranspiration[i_Layer] = vm_Evaporation[i_Layer] + vm_Transpiration[i_Layer];
-        vm_SoilMoisture[i_Layer] -= (vm_Evapotranspiration[i_Layer] / 1000.0 / vm_LayerThickness[i_Layer]);
+        vm_SoilMoisture[i_Layer] -= (vm_Evapotranspiration[i_Layer] / 1000.0 / vm_LayerThickness[i_Layer]);   //FS: soil moisture is modified here!
 
         //  Generelle Begrenzung des Evaporationsentzuges
         if (vm_SoilMoisture[i_Layer] < 0.01) {
