@@ -1069,10 +1069,14 @@ void CropModule::step(double vw_MeanAirTemperature,
 
     // hourly overclocked canopy photosynthesis
 #pragma region hourly overclocked
+
+    double vc_InterceptionStorage_na;                         // @ToDo FS: for debugging and comparison
+
     if (cropPs.__enable_hourly_photosynthesis__) {
 
       // daily interception storage
       fc_CropInterception(vw_GrossPrecipitation);
+      vc_InterceptionStorage_na = vc_InterceptionStorage;     // @ToDo FS: for debugging and comparison
 
       // const hPhoto::unit hourly_data_in_unit = hPhoto::unit::umolpm2ps; // FS: depends on input data
       const double parfrac = 0.45;
@@ -1166,8 +1170,8 @@ void CropModule::step(double vw_MeanAirTemperature,
       vc_MaintenanceRespirationAS = 0.0;
       vector<double> hourly_KTkc_day;
       // vector<double> hourly_GP_day;
-      vector<double> hourly_ActualTranspirationDeficit_day;
-      vector<double> hourly_PotentialTranspirationDeficit_day;
+      vector<double> hourly_ActualTranspirationDeficit_d;
+      vector<double> hourly_PotentialTranspirationDeficit_d;
 
       for (int h = 0; h < 24; ++h) {  // hourly overclocked loop
         bool is_daytime = ((h >= sunriseH) && (h < sunsetH)) ? true : false;
@@ -1346,8 +1350,8 @@ void CropModule::step(double vw_MeanAirTemperature,
         // fc_DroughtImpactOnFertility_h();      // = f(vc_TranspirationDeficit_h)
 
         // prepare aggregation back to daily time step
-        hourly_ActualTranspirationDeficit_day.push_back(vc_ActualTranspirationDeficit_h);
-        hourly_PotentialTranspirationDeficit_day.push_back(vc_PotentialTranspirationDeficit_h);
+        hourly_ActualTranspirationDeficit_d.push_back(vc_ActualTranspirationDeficit_h);
+        hourly_PotentialTranspirationDeficit_d.push_back(vc_PotentialTranspirationDeficit_h);
 
 #pragma endregion further hourly calculations
 
@@ -1362,22 +1366,24 @@ void CropModule::step(double vw_MeanAirTemperature,
 
       // aggregation back to daily time step, mean
       // daily transpiration deficit is needed for fc_DroughtImpactOnFertility(), which affects CropModule::fc_CropDryMatter(vw_MeanAirTemperature) via vc_DroughtImpactOnFertility
-      vc_ActualTranspirationDeficit = accumulate(hourly_ActualTranspirationDeficit_day.begin(), hourly_ActualTranspirationDeficit_day.end(), 0.);
-      vc_PotentialTranspirationDeficit = accumulate(hourly_PotentialTranspirationDeficit_day.begin(), hourly_PotentialTranspirationDeficit_day.end(), 0.);
+      vc_ActualTranspirationDeficit = accumulate(hourly_ActualTranspirationDeficit_d.begin(), hourly_ActualTranspirationDeficit_d.end(), 0.);
+      vc_PotentialTranspirationDeficit = accumulate(hourly_PotentialTranspirationDeficit_d.begin(), hourly_PotentialTranspirationDeficit_d.end(), 0.);
       vc_TranspirationDeficit = (vc_PotentialTranspirationDeficit > 0) ? vc_ActualTranspirationDeficit / vc_PotentialTranspirationDeficit : 1.0;
       // @ ToDo FS: Or should we calculate the daily vc_TranspirationDeficit in a similar way as in CropModule::fc_CropWaterUptake(...)? Would this maybe work by changing fc_CropWaterUptake(...)
       //            to a function that does not perform hidden modifications to claas or instance attrs. Instead, all inputs and outputs need to be provided and modification of CropModule attrs
       //            happens in a next step. That way, daily vc_TranspirationDeficit can be calculated without  modifying anything, and maybe additionally the code could even be applied to daily
-      //            as well as hourly time steps? 
-      // vc_TranspirationDeficit = ... calculate daily vc_TranspirationDeficit from CropModule::fc_CropWaterUptake(...) without actually running the CropModule::fc_CropWaterUptake(...) method ...
-      //                               (because this method currently modifies some attrs in the background, which it shouldn't in this case)
+      //            as well as hourly time steps?
 
       // CropModule::fc_CropDryMatter(...) uses the (daily) vc_KTkc CropModule attr
       vc_KTkc = get<0>(vc_KTkc_vc_KTko(vw_MeanAirTemperature));                                             // FS: reaction speed factor with the (daily) mean temperature (=default daily MONICA)
       // vc_KTkc = accumulate(hourly_KTkc_day.begin(), hourly_KTkc_day.end(), 0.) / hourly_KTkc_day.size(); //     vs. mean of the (hourly) reaction speed factors
       // vc_KTkc = ... f(hourly_KTkc_day, hourly_GP_day) ...                                                //     vs. some sort of weighted mean (not sure what is best here, but don't change too much at once for now)
 
+
       if (!cropPs.__enable_hourly_respiration__) {
+        // ####################################################################################
+        // daily maintenance respiration (AGROSIM / daily MONICA code)
+        // ####################################################################################
         double vc_PhotoTemperature = vw_MaxAirTemperature - ((vw_MaxAirTemperature - vw_MinAirTemperature) / 4.0);
         double vc_NightTemperature = vw_MinAirTemperature + ((vw_MaxAirTemperature - vw_MinAirTemperature) / 4.0);
 
@@ -1408,7 +1414,10 @@ void CropModule::step(double vw_MeanAirTemperature,
       }
 
   #pragma region growth respiration
-      // AGROSIM night and day temperatures from hourly photosynthesis
+      // ####################################################################################
+      // daily growth respiration (AGROSIM / daily MONICA code)
+      // ####################################################################################
+      // night and day temperatures from hourly photosynthesis
       double vc_PhotoTemperature, vc_NightTemperature;
       if (cropPs.__enable_hourly_respiration__) {
         vc_PhotoTemperature = vc_PhotoTemperature_;
@@ -1558,8 +1567,7 @@ void CropModule::step(double vw_MeanAirTemperature,
     //             so it applies the drought stress based on the previous time step? -> hourly version fc_CropWaterUptake_h(...) placed inside
     //             the hourly loop and calculated averaged transpiration deficit for the day afterwards for use with other (daily) stress factors
 
-
-    ////////// for comparison/debugging only
+    // /* for comparison/debugging only
     double vc_ReferenceEvapotranspiration_na;
     // calculate reference evapotranspiration if not provided directly via climate files
     if (vw_ReferenceEvapotranspiration < 0) {
@@ -1574,9 +1582,8 @@ void CropModule::step(double vw_MeanAirTemperature,
       // use reference evapotranspiration from climate file
       vc_ReferenceEvapotranspiration_na = vw_ReferenceEvapotranspiration;
     }
-    auto [vc_Transpiration_na, vc_TranspirationDeficit_na] = fc_CropWaterUptake_notApplied(soilColumn.vm_GroundwaterTableLayer, vc_ReferenceEvapotranspiration_na, vc_InterceptionStorage, 6.5);
-    //////////
-
+    auto [vc_Transpiration_na, vc_TranspirationDeficit_na] =  fc_CropWaterUptake_notApplied(soilColumn.vm_GroundwaterTableLayer, vc_ReferenceEvapotranspiration_na, vc_InterceptionStorage_na, 6.5);  // pair<std::vector<double>, double> na = ...; auto vc_Transpiration_na = na.first; auto vc_TranspirationDeficit_na = na.second;
+    // */
 
     fc_HeatStressImpact(vw_MaxAirTemperature,
                         vw_MinAirTemperature);  // FS: This calculates vc_CropHeatRedux, which affects CropModule::fc_CropDryMatter(...)
@@ -5182,8 +5189,8 @@ std::pair<std::vector<double>, double> CropModule::fc_CropWaterUptake_notApplied
 
   double vc_EvaporatedFromIntercept = 0.0;
   double vc_TranspirationDeficit = 1.0;
-  std::vector<double> vc_Transpiration(vc_RootingZone, 0.0);
-  std::vector<double> vc_TranspirationRedux(vc_RootingZone, 0.0);
+  std::vector<double> vc_Transpiration(nols, 0.0);
+  std::vector<double> vc_TranspirationRedux(nols, 0.0);
 
   // ################
   // # Interception #
