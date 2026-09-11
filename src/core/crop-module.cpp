@@ -1300,22 +1300,24 @@ void CropModule::step(double vw_MeanAirTemperature,
         // //     However, I think there is little we can do about it now (better process understanding or more quantitative data on this required).
         // } else ...
 
-        // ####################################################################################
-        // hourly maintenance respiration (simplified; inspired by AGROSIM / daily MONICA code)
-        // ####################################################################################
-        double vc_MaintenanceRespirationSum_h = 0.0;  // this is a sum over plant organs (not over time!)
-        // AGOSIM night and day maintenance and growth respiration
-        for (int i_Organ = 0; i_Organ < pc_NumberOfOrgans; i_Organ++) {
-          vc_MaintenanceRespirationSum_h += vc_OrganGreenBiomass[i_Organ] * pc_OrganMaintenanceRespiration[i_Organ]; // [kg CH2O ha-1]
-                                        // * vc_ActiveFraction[i_Organ]; wenn nicht schon durch acc dead matter abgedeckt
+        double vc_MaintenanceRespirationAS_h;
+        if (cropPs.__enable_hourly_respiration__) {
+          // ####################################################################################
+          // hourly maintenance respiration (simplified; inspired by AGROSIM / daily MONICA code)
+          // ####################################################################################
+          double vc_MaintenanceRespirationSum_h = 0.0;  // this is a sum over plant organs (not over time!)
+          // AGOSIM night and day maintenance and growth respiration
+          for (int i_Organ = 0; i_Organ < pc_NumberOfOrgans; i_Organ++) {
+            vc_MaintenanceRespirationSum_h += vc_OrganGreenBiomass[i_Organ] * pc_OrganMaintenanceRespiration[i_Organ]; // [kg CH2O ha-1]
+                                          // * vc_ActiveFraction[i_Organ]; wenn nicht schon durch acc dead matter abgedeckt
+          }
+          double vc_MaintenanceRespiration_h = vc_MaintenanceRespirationSum_h * pow(2.0, (cropPs.pc_MaintenanceRespirationParameter1 *
+                                                                                          (hp_in.leafT -  // FS: for now, this is air temperature; maybe use canopy temperature or use organ-specific temperature and put this in the for (int i_Organ = 0; i_Organ < pc_NumberOfOrgans; i_Organ++) loop as well?
+                                                                                          cropPs.pc_MaintenanceRespirationParameter2))) / 12.0;  // @todo: [g m-2] --> [kg ha-1]
+
+          double vc_MaintenanceRespirationAS_h = vc_MaintenanceRespiration_h; // [kg CH2O ha-1]
+          vc_Assimilates_h -= vc_MaintenanceRespiration_h; // [kg CH2O ha-1]
         }
-        double vc_MaintenanceRespiration_h = vc_MaintenanceRespirationSum_h * pow(2.0, (cropPs.pc_MaintenanceRespirationParameter1 *
-                                                                                        (hp_in.leafT -  // FS: for now, this is air temperature; maybe use canopy temperature or use organ-specific temperature and put this in the for (int i_Organ = 0; i_Organ < pc_NumberOfOrgans; i_Organ++) loop as well?
-                                                                                         cropPs.pc_MaintenanceRespirationParameter2))) / 12.0;  // @todo: [g m-2] --> [kg ha-1]
-
-        double vc_MaintenanceRespirationAS_h = vc_MaintenanceRespiration_h; // [kg CH2O ha-1]
-        vc_Assimilates_h -= vc_MaintenanceRespiration_h; // [kg CH2O ha-1]
-
 
 #pragma region further hourly calculations
         // calculate reference evapotranspiration if not provided directly via climate files
@@ -1355,7 +1357,7 @@ void CropModule::step(double vw_MeanAirTemperature,
         vc_GrossPhotosynthesisReference_mol += vc_GrossPhotosynthesisReference_mol_h;
         vc_Assimilates += vc_Assimilates_h;
         vc_GrossAssimilates += vc_GrossAssimilates_h;
-        vc_MaintenanceRespirationAS += vc_MaintenanceRespirationAS_h;
+        if (cropPs.__enable_hourly_respiration__) { vc_MaintenanceRespirationAS += vc_MaintenanceRespirationAS_h; }
       }
 
       // aggregation back to daily time step, mean
@@ -1374,6 +1376,36 @@ void CropModule::step(double vw_MeanAirTemperature,
       vc_KTkc = get<0>(vc_KTkc_vc_KTko(vw_MeanAirTemperature));                                             // FS: reaction speed factor with the (daily) mean temperature (=default daily MONICA)
       // vc_KTkc = accumulate(hourly_KTkc_day.begin(), hourly_KTkc_day.end(), 0.) / hourly_KTkc_day.size(); //     vs. mean of the (hourly) reaction speed factors
       // vc_KTkc = ... f(hourly_KTkc_day, hourly_GP_day) ...                                                //     vs. some sort of weighted mean (not sure what is best here, but don't change too much at once for now)
+
+      if (!cropPs.__enable_hourly_respiration__) {
+        double vc_PhotoTemperature = vw_MaxAirTemperature - ((vw_MaxAirTemperature - vw_MinAirTemperature) / 4.0);
+        double vc_NightTemperature = vw_MinAirTemperature + ((vw_MaxAirTemperature - vw_MinAirTemperature) / 4.0);
+
+        double vc_MaintenanceRespirationSum = 0.0;
+        // AGOSIM night and day maintenance and growth respiration
+        for (int i_Organ = 0; i_Organ < pc_NumberOfOrgans; i_Organ++) {
+          vc_MaintenanceRespirationSum +=
+              vc_OrganGreenBiomass[i_Organ] * pc_OrganMaintenanceRespiration[i_Organ]; // [kg CH2O ha-1]
+          // * vc_ActiveFraction[i_Organ]; wenn nicht schon durch acc dead matter abgedeckt
+        }
+
+        double vc_NormalisedDayLength = 2.0 - (vc_PhotoperiodicDaylength / 12.0);
+
+        double vc_PhotoMaintenanceRespiration = vc_MaintenanceRespirationSum * pow(2.0,
+                                                                                  (cropPs.pc_MaintenanceRespirationParameter1 *
+                                                                                   (vc_PhotoTemperature -
+                                                                                    cropPs.pc_MaintenanceRespirationParameter2))) *
+                                                (2.0 - vc_NormalisedDayLength); // @todo: [g m-2] --> [kg ha-1]
+
+        double vc_DarkMaintenanceRespiration = vc_MaintenanceRespirationSum * pow(2.0, (cropPs.pc_MaintenanceRespirationParameter1 *
+                                                                                        (vc_NightTemperature -
+                                                                                         cropPs.pc_MaintenanceRespirationParameter2))) *
+                                              vc_NormalisedDayLength; // @todo: [g m-2] --> [kg ha-1]
+
+        vc_MaintenanceRespirationAS = vc_PhotoMaintenanceRespiration + vc_DarkMaintenanceRespiration; // [kg CH2O ha-1]
+
+        vc_Assimilates -= vc_PhotoMaintenanceRespiration + vc_DarkMaintenanceRespiration; // [kg CH2O ha-1]
+      }
 
   #pragma region growth respiration
       // AGROSIM night and day temperatures from hourly photosynthesis
@@ -3245,12 +3277,12 @@ void CropModule::fc_CropPhotosynthesis(double vw_MeanAirTemperature,
 
 
   // AGROSIM night and day temperatures from hourly photosynthesis
-  if (cropPs.__enable_hourly_photosynthesis__ && cropPs.__enable_hourly_respiration__) {
-    vc_PhotoTemperature = vc_PhotoTemperature_;
-    vc_NightTemperature = vc_NightTemperature_;
-    vc_PhotoperiodicDaylength = vc_PhotoperiodicDaylength_;
-    vc_NormalisedDayLength = 2.0 - (vc_PhotoperiodicDaylength / 12.0);
-  }
+  // if (cropPs.__enable_hourly_photosynthesis__ && cropPs.__enable_hourly_respiration__) {
+  //   vc_PhotoTemperature = vc_PhotoTemperature_;
+  //   vc_NightTemperature = vc_NightTemperature_;
+  //   vc_PhotoperiodicDaylength = vc_PhotoperiodicDaylength_;
+  //   vc_NormalisedDayLength = 2.0 - (vc_PhotoperiodicDaylength / 12.0);
+  // }
 
   double vc_GrowthRespirationSum = 0.0;
 
