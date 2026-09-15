@@ -195,6 +195,15 @@ public:
    */
   A_rubisco_results A_rubisco(double vw_MeanAirTemperature, double Cc, double O, Voc::CPData &_cropPhotosynthesisResults) const;
 
+  double canopyTemperature(double globalRad_Wpm2ps,
+                           double Ta_K, 
+                           double vc_AerodynamicResistance, 
+                           double vc_StomataResistance,
+                           double vc_VapourPressure,
+                           double vc_SaturatedVapourPressure,
+                           double vc_SaturatedVapourPressureSlope,
+                           double vc_PsycrometerConstant);
+
   struct hp {
     double leafT;
     double solarEl;
@@ -205,8 +214,8 @@ public:
                                                                   double inst_dir_rad,
                                                                   double solarElevation_rad,
                                                                   double leafTemperature,
-                                                                  double vw_AtmosphericCO2Concentration,
-                                                                  double vw_AtmosphericO3Concentration);
+                                                                  double vw_AtmosphericCO2Concentration); // ,
+                                                                  // double vw_AtmosphericO3Concentration);
 
   void fc_CropPhotosynthesis(double vw_MeanAirTemperature,
                              double vw_MaxAirTemperature,
@@ -675,6 +684,11 @@ private:
   double pc_HeatSumIrrigationStart{};
   double pc_HeatSumIrrigationEnd{};
   double vs_HeightNN{};
+  double vc_AtmosphericPressure{};                                          // FS: calculated in CropModule::fc_ReferenceEvapotranspiration_h(...);
+  double vc_PsycrometerConstant{};                                          // FS: calculated in CropModule::fc_ReferenceEvapotranspiration_h(...);
+  double vc_SaturatedVapourPressure_h{};                                    // FS: calculated in CropModule::fc_ReferenceEvapotranspiration_h(...);
+  double vc_VapourPressure_h{};                                             // FS: calculated in CropModule::fc_ReferenceEvapotranspiration_h(...);
+  double vc_SaturatedVapourPressureSlope_h{};                               // FS: calculated in CropModule::fc_ReferenceEvapotranspiration_h(...);
   double pc_InitialKcFactor{}; //! old Kcini
   std::vector<double> pc_InitialOrganBiomass;
   double pc_InitialRootingDepth{};
@@ -781,6 +795,8 @@ private:
   //double vc_TheoreticalGDDAccumulated{0.0}; //!< Total GDD accumulated since crop start (for phase tracking)
   std::vector<double> pc_StageTemperatureSum; //! old TSUM
   double vc_StomataResistance{0.0}; //! old RSTOM
+  double vc_StomataResistance_h{0.0};                                       // FS: hourly
+  double vc_AerodynamicResistance_h{};                                      // FS: hourly (wind speed dependent) aerodynamic resistance
   std::vector<bool> pc_StorageOrgan;
   int vc_StorageOrgan{4};
   double vc_TargetNConcentration{0.0}; //! old GEHMAX
