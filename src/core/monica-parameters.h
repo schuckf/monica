@@ -757,6 +757,7 @@ struct DLL_API CropModuleParameters : public Tools::Json11Serializable {
   json11::Json::object __hourly_in_data__;        //FS: quick & dirty option to read in hourly irradiance and temperature data dictionary style
   double __longitude__{ 0.0 };                    //FS: longitude required for hourly solar position calculations using real world time (required e.g. for consistency if real world hourly data is read in)
   double __UTC_offset__{ 0.0 };                   //FS: UTC offset required for hourly solar position calculations using real world time (required e.g. for consistency if real world hourly data is read in)
+  bool __enable_leaf_temperature__{false};        //FS: leaf temperature model (used in hourly photosynthesis code)
   
   bool __enable_T_response_leaf_expansion__{ false };
   bool __disable_daily_root_biomass_to_soil__{ false };

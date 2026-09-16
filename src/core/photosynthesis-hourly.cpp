@@ -150,7 +150,7 @@ hPhoto::PAR_radiation_result hPhoto::PAR_radiation(double global_rad, double ext
 }
 
 
-double hPhoto::Spitters_canop_photo_dL(double beta, double L, double I0_dr, double I0_df, double A_m, double epsilon, double k_df, double sigma, bool kgpha, int leaf_angle_integration_style)
+dL_result hPhoto::Spitters_canop_photo_dL(double beta, double L, double I0_dr, double I0_df, double A_m, double epsilon, double k_df, double sigma, bool kgpha, int leaf_angle_integration_style)
 {
   assert(L > 0.);
 
@@ -287,43 +287,56 @@ double hPhoto::Spitters_canop_photo_dL(double beta, double L, double I0_dr, doub
       as well as the python versions (pcse assim7 and assim8, see https://github.com/ajwdewit/pcse/blob/4d9f0e4f542e9062db338aaf1a227a75f1b03949/pcse/crop/assimilation.py#L147 and https://github.com/ajwdewit/pcse/blob/4d9f0e4f542e9062db338aaf1a227a75f1b03949/pcse/crop/assimilation.py#L387)
   */
 
-  // eq. 18
-  double A = f_sl * A_sl + (1. - f_sl) * A_sh;
-  return A;
+  // // eq. 18
+  // double A = f_sl * A_sl + (1. - f_sl) * A_sh;
+  // return A;
 
-  // return {f_sl, A_sl, A_sh};
+  return {f_sl, A_sl, A_sh};
 }
 
 
-double hPhoto::Spitters_canop_photo_multilayer(double beta, double LAI, double I0_dr, double I0_df, double A_m, double epsilon, double k_df, double sigma, bool kgpha, int leaf_angle_integration_style, int n_canopy_layers) {
+photo_result hPhoto::Spitters_canop_photo_multilayer(double beta, double LAI, double I0_dr, double I0_df, double A_m, double epsilon, double k_df, double sigma, bool kgpha, int leaf_angle_integration_style, int n_canopy_layers) {
   assert(n_canopy_layers > 0);
 
   if (LAI <= 0.0) {
-    return 0.0;
+    // return 0.0;
+    return {0.0, 0.0, 0.0, 0.0, 0.0};
   }
 
   double dl = 1. / n_canopy_layers;
 
   // vector<double> canopy_layers;
   double A_canop = 0.;
+  double LAI_sl_canop = 0., A_sl_canop = 0., A_sh_canop = 0.;
   for (int i = 0; i < n_canopy_layers; ++i) {
     // canopy_layers.push_back((i + 0.5) * dl);
 
     double L = LAI * ((i + 0.5) * dl); // partial cumulated leaf area index at various canopy depths (= LAIC from Spitters et al. 1989)
 
     // photosynthesis of canopy layer dL
-    auto A = Spitters_canop_photo_dL(beta, L, I0_dr, I0_df, A_m, epsilon, k_df, sigma, kgpha, leaf_angle_integration_style);
+    // auto A = Spitters_canop_photo_dL(beta, L, I0_dr, I0_df, A_m, epsilon, k_df, sigma, kgpha, leaf_angle_integration_style);
+    auto dL_res = Spitters_canop_photo_dL(beta, L, I0_dr, I0_df, A_m, epsilon, k_df, sigma, kgpha, leaf_angle_integration_style);
+
+    // eq. 18
+    double A = dL_res.f_sl * dL_res.A_sl + (1. - dL_res.f_sl) * dL_res.A_sh;
 
     // sum over canopy layers (= numerical integration)
     A_canop += A * dl;
+    LAI_sl_canop += dL_res.f_sl * L * dl;
+    A_sl_canop += dL_res.f_sl * dL_res.A_sl * dl;
+    A_sh_canop += (1. - dL_res.f_sl) * dL_res.A_sh * dl;
   }
-  return A_canop * LAI;
+
+  double f_sl_canop = LAI_sl_canop / LAI;
+
+  // return A_canop * LAI;
+  return {A_canop * LAI, LAI_sl_canop, f_sl_canop, A_sl_canop * LAI_sl_canop, A_sh_canop * (LAI - LAI_sl_canop)};
 }
 
-
-double hPhoto::Spitters_canop_photo_3p(double beta, double LAI, double I0_dr, double I0_df, double A_m, double epsilon, double k_df, double sigma, bool kgpha, int leaf_angle_integration_style) {
+photo_result hPhoto::Spitters_canop_photo_3p(double beta, double LAI, double I0_dr, double I0_df, double A_m, double epsilon, double k_df, double sigma, bool kgpha, int leaf_angle_integration_style) {
   if (LAI <= 0.0) {
-    return 0.0;
+    // return 0.0;
+    return {0.0, 0.0, 0.0, 0.0, 0.0};
   }
 
   // 3-point integration procedure from Spitters (1986)
@@ -336,17 +349,29 @@ double hPhoto::Spitters_canop_photo_3p(double beta, double LAI, double I0_dr, do
 
   // selection of canopy depths (LAIC from top)
   double A_canop = 0., L, A = 0.;
+  double LAI_sl_canop = 0., A_sl_canop = 0., A_sh_canop = 0.;
 
   for (int l = 0; l < 3; ++l) {
     L = LAI * canopy_layers[l];  // partial cumulated leaf area index at various canopy depths (= LAIC from Spitters et al. 1989)
 
     // photosynthesis of canopy layer at gaussian integration point l
-    A = Spitters_canop_photo_dL(beta, L, I0_dr, I0_df, A_m, epsilon, k_df, sigma, kgpha, leaf_angle_integration_style);
+    // A = Spitters_canop_photo_dL(beta, L, I0_dr, I0_df, A_m, epsilon, k_df, sigma, kgpha, leaf_angle_integration_style);
+    auto dL_res = Spitters_canop_photo_dL(beta, L, I0_dr, I0_df, A_m, epsilon, k_df, sigma, kgpha, leaf_angle_integration_style);
+
+    // eq. 18
+    double A = dL_res.f_sl * dL_res.A_sl + (1. - dL_res.f_sl) * dL_res.A_sh;
 
     // 3-point gaussian integration
     A_canop += A * gaussian_weights[l];
+    LAI_sl_canop += dL_res.f_sl * L * gaussian_weights[l];
+    A_sl_canop += dL_res.f_sl * dL_res.A_sl* gaussian_weights[l];
+    A_sh_canop += (1. - dL_res.f_sl) * dL_res.A_sh * gaussian_weights[l];
   }
-  return A_canop * LAI;
+
+  double f_sl_canop = LAI_sl_canop / LAI;
+
+  // return A_canop * LAI;
+  return {A_canop * LAI, LAI_sl_canop, f_sl_canop, A_sl_canop * LAI_sl_canop, A_sh_canop * (LAI - LAI_sl_canop)};
 }
 
 

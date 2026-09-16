@@ -148,7 +148,11 @@ struct PAR_radiation_result {
  */
 PAR_radiation_result PAR_radiation(double global_rad, double extra_terr_rad, double solar_el, bool cscor=true, bool parcor=true, double parfrac=0.45, unit out_unit=unit::MJpm2ps);
 
-
+struct dL_result {
+    double f_sl;    // fraction sunlit
+    double A_sl;    // photosynthesis sunlit
+    double A_sh;    // photosynthesis shaded
+};
 /**
  * @brief SUCROS87-inspired Wageningen-style hourly canopy gross photosynthesis (has to be integrated over the canopy layers!).
  * 
@@ -185,11 +189,18 @@ PAR_radiation_result PAR_radiation(double global_rad, double extra_terr_rad, dou
  *                  0 = None (leads to overestimation according to Spitters 1986!);
  *                  1 = Spitters 1986, custom implementation, including Wageningen school implementations-inspired numerical safeguards;
  *                  2 = Spitters 1989, SUCROS87 implementation
- * @return hourly photosynthesis of the canopy layer dL [g CO2 m-2 ground h-1].
+ * @return hphoto::dL_result {f_sl, A_sl, A_sh} (fraction sunlit, sunlit & shaded hourly gross photosynthesis of the canopy layer dL [g CO2 m-2 ground h-1]).
  */
-double Spitters_canop_photo_dL(double beta, double L, double I0_dr, double I0_df, double A_m, double epsilon, double k_df=0.6, double sigma=0.2, bool kgpha=false, int leaf_angle_integration_style=1);
+dL_result Spitters_canop_photo_dL(double beta, double L, double I0_dr, double I0_df, double A_m, double epsilon, double k_df=0.6, double sigma=0.2, bool kgpha=false, int leaf_angle_integration_style=1);
 
 
+struct photo_result{
+  double A_gross_canop;     // canopy gross photosynthesis for the whole canopy (A_canop * LAI)
+  double LAI_sl_canop;      // canopy sunlit LAI
+  double f_sl_canop;        // sunlit fraction of the canopy
+  double A_sl_gross_canop;  // sunlit canopy gross photosynthesis (A_sl_canop * LAI_sl_canop)
+  double A_sh_gross_canop;  // shaded canopy gross photosynthesis (A_sh_canop * (LAI - LAI_sl_canop))
+};
 /**
  * @brief SUCROS87-inspired Wageningen-style hourly canopy gross photosynthesis.
  * 
@@ -224,11 +235,10 @@ double Spitters_canop_photo_dL(double beta, double L, double I0_dr, double I0_df
  *                  1 = Spitters 1986, custom implementation, including Wageningen school implementations-inspired numerical safeguards;
  *                  2 = Spitters 1989, SUCROS87 implementation
  * @param n_canopy_layers number of canopy layers. Used for midpoint-integrtion over the photosynthesis per layer (non-linear, exponential). Default is 10.
-        Usually in the order of 10 to 20 (accuracy/computation time trade-off).
- * @return hourly photosynthesis of the canopy [g CO2 m-2 ground h-1].
+ *                  Usually in the order of 10 to 20 (accuracy/computation time trade-off).
+ * @return {A_gross_canop, LAI_sl_canop, f_sl_canop, A_sl_gross_canop, A_sh_gross_canop} (hourly gross photosynthesis of the whole canopy [g CO2 m-2 ground h-1], sunlit LAI, fraction sunlit, sunlit & shaded hourly gross photosynthesis of the whole canopy [g CO2 m-2 ground h-1]).
  */
-double Spitters_canop_photo_multilayer(double beta, double LAI, double I0_dr, double I0_df, double A_m, double epsilon, double k_df=0.6, double sigma=0.2, bool kgpha=false, int leaf_angle_integration_style=1, int n_canopy_layers=10);
-
+photo_result Spitters_canop_photo_multilayer(double beta, double LAI, double I0_dr, double I0_df, double A_m, double epsilon, double k_df=0.6, double sigma=0.2, bool kgpha=false, int leaf_angle_integration_style=1, int n_canopy_layers=10);
 
 
 /**
@@ -267,9 +277,9 @@ double Spitters_canop_photo_multilayer(double beta, double LAI, double I0_dr, do
  *                   10 = rectangular hyperbola light response curve, no leaf angle integration (overestimation should not as bad as with exponential light response curve accoring to Spitters 1986; inspired by style 0)
  *                   11 = rectangular hyperbola light response curve, custom implementation with custom leaf angle integration and numerical safeguards (inspired by style 1)
  *                   12 = rectangular hyperbola light response curve, using 3pt gauss integration over leaf angles (inspired by style 2)
- * @return hourly photosynthesis of the canopy [g CO2 m-2 ground h-1].
+ * @return {A_gross_canop, LAI_sl_canop, f_sl_canop, A_sl_gross_canop, A_sh_gross_canop} (hourly gross photosynthesis of the whole canopy [g CO2 m-2 ground h-1], sunlit LAI, fraction sunlit, sunlit & shaded hourly gross photosynthesis of the whole canopy [g CO2 m-2 ground h-1]).
  */
-double Spitters_canop_photo_3p(double beta, double LAI, double I0_dr, double I0_df, double A_m, double epsilon, double k_df=0.6, double sigma=0.2, bool kgpha=false, int leaf_angle_integration_style=1);
+photo_result Spitters_canop_photo_3p(double beta, double LAI, double I0_dr, double I0_df, double A_m, double epsilon, double k_df=0.6, double sigma=0.2, bool kgpha=false, int leaf_angle_integration_style=1);
 
 
 /**

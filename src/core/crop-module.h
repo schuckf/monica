@@ -191,18 +191,19 @@ public:
    * @param Cc                                   Chloroplast CO2 partial pressure (=CO2 partial pressure at the carboxylating sites of Rubisco).
    * @param O                                    Oxygen partial pressure.
    * @param _cropPhotosynthesisResults           Default Voc::CPData monica::CropModule::_cropPhotosynthesisResults to be altered by the function. Seems to be a helper struct used for debugging?
-   * @return A_rubisco_results (vc_AssimilationRate, vc_AssimilationRateReference, vc_RadiationUseEfficiency, vc_RadiationUseEfficiencyReference)
+   * @return A_rubisco_results (vc_AssimilationRate, vc_AssimilationRateReference, vc_RadiationUseEfficiency, vc_RadiationUseEfficiencyReference, vc_KTkc)
    */
   A_rubisco_results A_rubisco(double vw_MeanAirTemperature, double Cc, double O, Voc::CPData &_cropPhotosynthesisResults) const;
 
-  double canopyTemperature(double globalRad_Wpm2ps,
-                           double Ta_K, 
-                           double vc_AerodynamicResistance, 
-                           double vc_StomataResistance,
-                           double vc_VapourPressure,
-                           double vc_SaturatedVapourPressure,
-                           double vc_SaturatedVapourPressureSlope,
-                           double vc_PsycrometerConstant);
+
+  double leafTemperature(double globalRad_Wpm2ps,
+                         double Ta_K, 
+                         double vc_AerodynamicResistance, 
+                         double vc_StomataResistance,
+                         double vc_VapourPressure,
+                         double vc_SaturatedVapourPressure,
+                         double vc_SaturatedVapourPressureSlope,
+                         double vc_PsycrometerConstant);
 
   struct hp {
     double leafT;
@@ -210,12 +211,19 @@ public:
     double globalRad;
     double extraRad;
   };
-  std::tuple<double, double, double> fc_CropGrossPhotosynthesis_h(double inst_diff_rad,
-                                                                  double inst_dir_rad,
-                                                                  double solarElevation_rad,
-                                                                  double leafTemperature,
-                                                                  double vw_AtmosphericCO2Concentration); // ,
-                                                                  // double vw_AtmosphericO3Concentration);
+  struct GP_results {
+    double A;       // canopy gross photosynthesis for the whole canopy
+    double A_Ref;   // canopy gross photosynthesis for the whole canopy
+    double KTkc;    // Factor needed to account for temperature-dependency of Michaelis-Menten constant for CO2 (photosynthesis method).
+    double LAI_sl;  // canopy sunlit LAI
+    double A_sl;    // sunlit canopy gross photosynthesis (A_sl_canop * LAI_sl_canop)
+  };
+  GP_results fc_CropGrossPhotosynthesis_h(double inst_diff_rad,
+                                          double inst_dir_rad,
+                                          double solarElevation_rad,
+                                          double leafTemperature,
+                                          double vw_AtmosphericCO2Concentration); // ,
+                                          // double vw_AtmosphericO3Concentration);
 
   void fc_CropPhotosynthesis(double vw_MeanAirTemperature,
                              double vw_MaxAirTemperature,
@@ -653,6 +661,7 @@ private:
   int pc_DevelopmentAccelerationByNitrogenStress{};
   size_t vc_DevelopmentalStage{0}; //! old INTWICK
   int _noOfCropSteps{0};
+  int _noOfHourlySteps_Devstage_gt_0{0};                                    // FS: number of hourly steps with development stage > 0
   double vc_DroughtImpactOnFertility{1.0};
   double vc_DroughtImpactOnFertility_h{1.0};                                // FS: hourly
   double pc_DroughtImpactOnFertilityFactor{};
@@ -676,7 +685,10 @@ private:
   double vc_GreenAreaIndex{0.0};
   double vc_GrossAssimilates{0.0};
   double vc_GrossPhotosynthesis{0.0}; //! old GPHOT
+  double vc_GrossPhotosynthesis_h_old{0.0};                                 // FS: gross photosynthesis of the previous hour
   double vc_GrossPhotosynthesis_mol{0.0};
+  // double vc_GrossPhotosynthesis_mol_h_old{0.0};                             // FS: gross photosynthesis of the previous hour
+  // double vc_GrossPhotosynthesis_sl_mol_h_old{0.0};                          // FS: gross photosynthesis of the previous hour
   double vc_GrossPhotosynthesisReference_mol{0.0};
   double vc_GrossPrimaryProduction{0.0};
   bool vc_GrowthCycleEnded{false};
@@ -684,17 +696,19 @@ private:
   double pc_HeatSumIrrigationStart{};
   double pc_HeatSumIrrigationEnd{};
   double vs_HeightNN{};
-  double vc_AtmosphericPressure{};                                          // FS: calculated in CropModule::fc_ReferenceEvapotranspiration_h(...);
-  double vc_PsycrometerConstant{};                                          // FS: calculated in CropModule::fc_ReferenceEvapotranspiration_h(...);
-  double vc_SaturatedVapourPressure_h{};                                    // FS: calculated in CropModule::fc_ReferenceEvapotranspiration_h(...);
-  double vc_VapourPressure_h{};                                             // FS: calculated in CropModule::fc_ReferenceEvapotranspiration_h(...);
-  double vc_SaturatedVapourPressureSlope_h{};                               // FS: calculated in CropModule::fc_ReferenceEvapotranspiration_h(...);
+  double vc_AtmosphericPressure{};                                          // [kPa]      FS: calculated in CropModule::step(...);
+  double vc_PsycrometerConstant{};                                          // [kPa °C-1] FS: calculated in CropModule::step(...);
+  double vc_SaturatedVapourPressure_h{};                                    // [kPa]      FS: calculated in CropModule::fc_ReferenceEvapotranspiration_h(...);
+  double vc_VapourPressure_h{};                                             // [kPa]      FS: calculated in CropModule::fc_ReferenceEvapotranspiration_h(...);
+  double vc_SaturatedVapourPressureSlope_h{};                               // [kPa °C-1] FS: calculated in CropModule::fc_ReferenceEvapotranspiration_h(...);
   double pc_InitialKcFactor{}; //! old Kcini
   std::vector<double> pc_InitialOrganBiomass;
   double pc_InitialRootingDepth{};
   double vc_InterceptionStorage{0.0};
   double vc_KcFactor{0.6}; //! old FKc
   double vc_LeafAreaIndex{0.0}; //! old LAI
+  double vc_LAI_sunlit_h_old{0.0};                                          // sunlit leaf area index of the previous hour
+  double vc_f_sunlit_h_old{0.0};                                            // fraction of sunlit leaves for the previous hour
   std::vector<double> vc_sunlitLeafAreaIndex;
   std::vector<double> vc_shadedLeafAreaIndex;
   double pc_LowTemperatureExposure{};
@@ -753,11 +767,9 @@ private:
   double vc_PhotActRadiationMean{0.0}; //! old RDN
   double pc_PlantDensity{};
   double vc_PotentialTranspiration{0.0};
-  double vc_PotentialTranspiration_h{0.0};                                  // FS: hourly
   double vc_ReferenceEvapotranspiration{0.0};
   double vc_RelativeTotalDevelopment{0.0};
   double vc_RemainingEvapotranspiration{0.0};
-  double vc_RemainingEvapotranspiration_h{0.0};                             // FS: hourly
   double vc_ReserveAssimilatePool{0.0}; //! old ASPOO
   double pc_ResidueNRatio{};
   double pc_RespiratoryStress{};

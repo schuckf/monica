@@ -1640,6 +1640,7 @@ Errors CropModuleParameters::merge(json11::Json j) {
   }
   set_double_value(__longitude__, j, "__longitude__");
   set_double_value(__UTC_offset__, j, "__UTC_offset__");
+  set_bool_value(__enable_leaf_temperature__, j, "__enable_leaf_temperature__");
   set_bool_value(__enable_T_response_leaf_expansion__, j, "__enable_T_response_leaf_expansion__");
   set_bool_value(__disable_daily_root_biomass_to_soil__, j, "__disable_daily_root_biomass_to_soil__");
   set_bool_value(__enable_vernalisation_factor_fix__, j, "__enable_vernalisation_factor_fix__");
@@ -1688,6 +1689,7 @@ json11::Json CropModuleParameters::to_json() const {
     {"__hourly_in_data__", __hourly_in_data__},
     {"__longitude__", __longitude__},
     {"__UTC_offset__", __UTC_offset__},
+    {"__enable_leaf_temperature__", __enable_leaf_temperature__},
     {"__enable_T_response_leaf_expansion__", __enable_T_response_leaf_expansion__},
     {"__disable_daily_root_biomass_to_soil__", __disable_daily_root_biomass_to_soil__},
     {"__enable_vernalisation_factor_fix__", __enable_vernalisation_factor_fix__}
