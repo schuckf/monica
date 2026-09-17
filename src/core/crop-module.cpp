@@ -929,13 +929,13 @@ void CropModule::step(double vw_MeanAirTemperature,
     if (_fireEvent) _fireEvent(string("Stage-") + to_string(vc_DevelopmentalStage + 1));
   }
 
-  // calculate height-dependent atm. pressure and psychrometric constant (calculating this once should be good enough)
-  if (_noOfCropSteps == 0) {
-    vc_AtmosphericPressure = 101.3 * pow(((293.0 - (0.0065 * vs_HeightNN)) / 293.0), 5.26); // atmospheric pressure [kPa], dependent on vs_HeightNN
-    // vc_PsycrometerConstant = vc_AtmosphericPressure * Cp_air / (2450 * 0.622);           // latent heat of water vaporization, 2450 [kJ kg−1]; ratio molecular weight of water vapor/dry air = 0.622
-    vc_PsycrometerConstant = 0.000665 * vc_AtmosphericPressure;                             // value 0.000665 taken from FAO-56 reference ET calculation; 0.000665 is roughly Cp_air / (2450 * 0.622)
-    assert(vc_PsycrometerConstant > 0.0);
-  }
+  // // FS: calculate height-dependent atm. pressure and psychrometric constant (calculating this once should be good enough)
+  // if (_noOfCropSteps == 0) {
+  //   vc_AtmosphericPressure = 101.3 * pow(((293.0 - (0.0065 * vs_HeightNN)) / 293.0), 5.26); // atmospheric pressure [kPa], dependent on vs_HeightNN
+  //   // vc_PsycrometerConstant = vc_AtmosphericPressure * Cp_air / (2450 * 0.622);           // latent heat of water vaporization, 2450 [kJ kg−1]; ratio molecular weight of water vapor/dry air = 0.622
+  //   vc_PsycrometerConstant = 0.000665 * vc_AtmosphericPressure;                             // value 0.000665 taken from FAO-56 reference ET calculation; 0.000665 is roughly Cp_air / (2450 * 0.622)
+  //   assert(vc_PsycrometerConstant > 0.0);
+  // }
 
   vc_DaylengthFactor =
     fc_DaylengthFactor(pc_DaylengthRequirement[vc_DevelopmentalStage],
@@ -1243,34 +1243,6 @@ void CropModule::step(double vw_MeanAirTemperature,
           double Ta_K = hourlyAirT.at(h) + Voc::D_IN_K;
           // vc_VapourPressure_h, vc_SaturatedVapourPressure_h and vc_SaturatedVapourPressureSlope_h for the previous time step are calculated in CropModule::fc_ReferenceEvapotranspiration_h(...)
 
-          // FS DEBUG LAI
-          // @ToDo FS: unrealistic temperatures that also change to drastically -> something is still messed up in the canopy temperature calculation
-          //           also, additional safeguards might be needed within the hourly photosynthesis code, since hourly temperature can reach more extreme values than daily mean temperature
-
-          // Calculation of wind speed in 2m height
-          double vw_WindSpeed_h = vw_WindSpeed; // wind speed hourly data missing; use daily data for now
-          double vc_WindSpeed_h_2m = max(0.5, vw_WindSpeed_h * (4.87 / (log(67.8 * vw_WindSpeedHeight - 5.42))));   // 0.5 minimum allowed windspeed for Penman-Monteith-Method FAO style calculations
-
-          // crop stomata, bulk surface and aerodynamic resistance (for the actual crop as opposed to FAO-56 12 cm grass)
-          double crop_height_eff = bound(0.2, vc_CropHeight, 2.);   // safeguard
-          double displacement_height = crop_height_eff * 2./3.;
-          double arg = (2. - displacement_height) / (0.123 * crop_height_eff);
-          double crop_AerodynamicResistance_h = (log(arg) * log(arg / 0.1)) / ((0.41 * 0.41) * vc_WindSpeed_h_2m);  // [s m-1] FAO-56 eq.4 and box 4
-
-          double vc_SaturationDeficit_h = vc_SaturatedVapourPressure_h - vc_VapourPressure_h;
-
-          // double photosynthesis_mol_prev = vc_GrossPhotosynthesis_mol_h_old;  // vc_GrossPhotosynthesis_sl_mol_h_old;
-          double photosynthesis_mol_prev = vc_GrossPhotosynthesis_h_old * 0.1 / (44. * 3600.); // [kg CO2 ha-1 h-1] -> [mol CO2 m-2 s-1]; kg ha-1 -> g m-2: ... * 0.1; g CO2 -> mol CO2: ... / 44; h-1 -> s-1; ... / 3600
-          double LAI_active = max(vc_LAI_sunlit_h_old, 0.4);        // safeguard
-          // double f_sl_prev = vc_f_sunlit_h_old;
-
-          // stomata conductance (to H2O) of the actual crop (used ass approx. stomata conductance to heat here)
-          double crop_StomataResistance_h = (vw_AtmosphericCO2Concentration * (1.0 + vc_SaturationDeficit_h / cropPs.pc_SaturationBeta)) / (cropPs.pc_StomataConductanceAlpha * photosynthesis_mol_prev);  // [s m-1]
-          // crop_StomataResistance_h = 20. * (vw_AtmosphericCO2Concentration * (1.0 + vc_SaturationDeficit_h / 1.5)) / (photosynthesis_mol_prev);  // [s m-1]
-          if (photosynthesis_mol_prev < 0.001) { // e.g. 0.0005
-            crop_StomataResistance_h = min(crop_StomataResistance_h, 1000.);  // [s m-1]   // FS: check what leads to a realistic leaf energy balance here: maybe 10000? or 5000? or 2000 or ...?
-          }
-          double crop_SurfaceResistance_h = crop_StomataResistance_h / LAI_active;                           // [s m-1] FAO-56 eq.5
 
           // cerr // FS DEBUG LAI
           // << "A=" << photosynthesis_mol_prev << std::endl
@@ -1280,10 +1252,16 @@ void CropModule::step(double vw_MeanAirTemperature,
           // << " rs_surface=" << crop_SurfaceResistance_h
           // << std::endl;
 
-          double Tc_K = leafTemperature(globRad_Wpm2ps, Ta_K,
-                                        crop_AerodynamicResistance_h, crop_StomataResistance_h, // crop_SurfaceResistance_h,
-                                        vc_VapourPressure_h, vc_SaturatedVapourPressure_h, vc_SaturatedVapourPressureSlope_h,
-                                        vc_PsycrometerConstant);
+          // cerr // FS DEBUG LAI
+          // << "A=" << photosynthesis_mol_prev << std::endl
+          // << " LAI_sunlit=" << vc_LAI_sunlit_h_old
+          // << " LAI_active=" << LAI_active
+          // << std::endl;
+
+          double Tc_K = canopTemperature(globRad_Wpm2ps, Ta_K,
+                                         vc_crop_AerodynamicResistance_h, vc_crop_SurfaceResistance_h,
+                                         vc_VapourPressure_h, vc_SaturatedVapourPressure_h, vc_SaturatedVapourPressureSlope_h,
+                                         vc_PsycrometerConstant);
           double Tc_C = Tc_K - Voc::D_IN_K;
           hp_in.leafT = Tc_C;
           // hp_in.leafT = f_sl_prev * Tc_C + (1. - f_sl_prev) * hourlyAirT.at(h);   // attempt weighted mean sunlit leaves & air temperature (as approx. for shaded)
@@ -1330,11 +1308,7 @@ void CropModule::step(double vw_MeanAirTemperature,
                                                                            vw_AtmosphericCO2Concentration);  // ,
                                                                            // vw_AtmosphericO3Concentration);
 
-        vc_LAI_sunlit_h_old = LAI_sl_h;
-        vc_f_sunlit_h_old = LAI_sl_h / vc_LeafAreaIndex;
-
         hourly_KTkc_day.push_back(KTkc);
-
 
         // FS DEBUG LAI
         // cerr << "vc_GrossCO2Assimilation_h=" << vc_GrossCO2Assimilation_h << std::endl
@@ -1374,11 +1348,6 @@ void CropModule::step(double vw_MeanAirTemperature,
         // Calculation of photosynthesis rate from [kg CO2 ha-1 h-1]  to [mol m-2 s-1] or [cm3 cm-2 s-1]
         double vc_GrossPhotosynthesis_mol_h = vc_GrossCO2Assimilation_h * 22414.0 / (10.0 * 3600.0 * 44.0);
         double vc_GrossPhotosynthesisReference_mol_h = vc_GrossCO2AssimilationReference_h * 22414.0 / (10.0 * 3600.0 * 44.0);
-
-        // store values for use at next step's canopy pr leaf temperature calculation
-        vc_GrossPhotosynthesis_h_old = vc_GrossCO2Assimilation_h;
-        // vc_GrossPhotosynthesis_mol_h_old = vc_GrossPhotosynthesis_mol_h;
-        // vc_GrossPhotosynthesis_sl_mol_h_old = vc_GrossCO2Assimilation_sl_h * 22414.0 / (10.0 * 3600.0 * 44.0);
 
         // // Converting photosynthesis rate from [kg CO2 ha leaf-1 d-1] to [kg CH2O ha-1  d-1]
         // Converting photosynthesis rate from [kg CO2 ha leaf-1 h-1] to [kg CH2O ha-1 h-1]
@@ -1465,7 +1434,7 @@ void CropModule::step(double vw_MeanAirTemperature,
         fc_CropWaterUptake_h(soilColumn.vm_GroundwaterTableLayer, vc_ReferenceEvapotranspiration_h);  //, vc_OxygenDeficit_h);
                                                                                                       // FS: This should calculate vc_TranspirationDeficit_h, which affects
                                                                                                       //     CropModule::fc_CropDevelopmentalStage(...) and CropModule::fc_DroughtImpactOnFertility()
-        // @ToDo FS: not sure yet if the water balance works corrctly -> teste if this works as intended
+        // @ToDo FS: not sure yet if the water balance works correctly -> teste if this works as intended
       
         // FS: do not change too much at once
         // fc_DroughtImpactOnFertility_h();      // = f(vc_TranspirationDeficit_h)
@@ -1484,6 +1453,24 @@ void CropModule::step(double vw_MeanAirTemperature,
         vc_GrossAssimilates += vc_GrossAssimilates_h;
         if (cropPs.__enable_hourly_respiration__) { vc_MaintenanceRespirationAS += vc_MaintenanceRespirationAS_h; }
 
+        if (cropPs.__enable_leaf_temperature__) {
+          // calculate resistances for the crop (as opposed to the FAO reference grass)
+          auto crop_r = crop_aerodyn_stomata_surface_resistances(vc_SaturatedVapourPressure_h,
+                                                                 vc_VapourPressure_h,
+                                                                 vc_CropHeight,
+                                                                 vc_GrossCO2Assimilation_h,
+                                                                 LAI_sl_h,
+                                                                 vw_AtmosphericCO2Concentration,
+                                                                 cropPs.pc_StomataConductanceAlpha,
+                                                                 cropPs.pc_SaturationBeta,
+                                                                 vs_HeightNN,
+                                                                 vw_WindSpeed, // wind speed hourly data missing; use daily data for now
+                                                                 vw_WindSpeedHeight);
+          vc_crop_AerodynamicResistance_h = crop_r.r_aero;
+          vc_crop_StomataResistance_h = crop_r.r_stom;
+          vc_crop_SurfaceResistance_h = crop_r.r_surf;
+        }
+
         _noOfHourlySteps_Devstage_gt_0++;
       }
 
@@ -1493,7 +1480,7 @@ void CropModule::step(double vw_MeanAirTemperature,
       vc_PotentialTranspirationDeficit = accumulate(hourly_PotentialTranspirationDeficit_d.begin(), hourly_PotentialTranspirationDeficit_d.end(), 0.);
       vc_TranspirationDeficit = (vc_PotentialTranspirationDeficit > 0) ? vc_ActualTranspirationDeficit / vc_PotentialTranspirationDeficit : 1.0;
       // @ ToDo FS: Or should we calculate the daily vc_TranspirationDeficit in a similar way as in CropModule::fc_CropWaterUptake(...)? Would this maybe work by changing fc_CropWaterUptake(...)
-      //            to a function that does not perform hidden modifications to claas or instance attrs. Instead, all inputs and outputs need to be provided and modification of CropModule attrs
+      //            to a function that does not perform hidden modifications to class or instance attrs. Instead, all inputs and outputs need to be provided and modification of CropModule attrs
       //            happens in a next step. That way, daily vc_TranspirationDeficit can be calculated without  modifying anything, and maybe additionally the code could even be applied to daily
       //            as well as hourly time steps?
 
@@ -3617,6 +3604,70 @@ CropModule::GP_results CropModule::fc_CropGrossPhotosynthesis_h(double inst_diff
 }
 
 /**
+ * @brief 
+ * 
+ * @param vc_VapourPressure               actual vapour pressure e_a [kPa]
+ * @param vc_SaturatedVapourPressure      saturation vapour pressure e_s [kPa]
+ * @param vc_CropHeight
+ * @param A_gross                         gross photosynthesis [kg CO2 ha-1 h-1]
+ * @param vw_AtmosphericCO2Concentration 
+ * @param pc_StomataConductanceAlpha
+ * @param pc_SaturationBeta
+ * @param vs_HeightNN 
+ * @param vw_WindSpeed 
+ * @param vw_WindSpeedHeight 
+ * @return double 
+ */
+CropModule::crop_r CropModule::crop_aerodyn_stomata_surface_resistances(double vc_SaturatedVapourPressure,
+                                                                        double vc_VapourPressure,
+                                                                        double vc_CropHeight,
+                                                                        double A_gross,
+                                                                        double LAI_sunlit,
+                                                                        double vw_AtmosphericCO2Concentration,
+                                                                        double pc_StomataConductanceAlpha,
+                                                                        double pc_SaturationBeta,
+                                                                        double vs_HeightNN,
+                                                                        double vw_WindSpeed,
+                                                                        double vw_WindSpeedHeight) {
+  // FS DEBUG LAI
+  // @ToDo FS: unrealistic temperatures that also change to drastically -> something is still messed up in the canopy temperature calculation
+  //           also, additional safeguards might be needed within the hourly photosynthesis code, since hourly temperature can reach more extreme values than daily mean temperature
+
+  // Calculation of atmospheric pressure
+  double vc_AtmosphericPressure = 101.3 * pow(((293.0 - (0.0065 * vs_HeightNN)) / 293.0), 5.26); // [kPa]
+
+  // Calculation of psychrometer constant - Luchtfeuchtigkeit
+  double vc_PsycrometerConstant = 0.000665 * vc_AtmosphericPressure;                             // psychrometric constant [kPa °C-1]
+
+  // Calculation of wind speed in 2m height
+  double vc_WindSpeed_2m = max(0.5, vw_WindSpeed * (4.87 / (log(67.8 * vw_WindSpeedHeight - 5.42))));   // 0.5 minimum allowed windspeed for Penman-Monteith-Method FAO style calculations
+
+  // aerodynamic resistance (for the actual crop as opposed to FAO-56 12 cm grass)
+  double crop_height_eff = bound(0.2, vc_CropHeight, 2.);   // safeguard
+  double displacement_height = crop_height_eff * 2./3.;
+  double arg = (2. - displacement_height) / (0.123 * crop_height_eff);
+  double crop_AerodynamicResistance = (log(arg) * log(arg / 0.1)) / ((0.41 * 0.41) * vc_WindSpeed_2m);  // [s m-1] FAO-56 eq.4 and box 4
+
+  // stomata resistance (to H2O) of the actual crop (used as approx. stomata conductance to heat here)
+  double vc_SaturationDeficit = vc_SaturatedVapourPressure - vc_VapourPressure;
+  double A_gross_mol = A_gross * 0.1 / (44. * 3600.);                                                   // [kg CO2 ha-1 h-1] -> [mol CO2 m-2 s-1]; kg ha-1 -> g m-2: ... * 0.1; g CO2 -> mol CO2: ... / 44; h-1 -> s-1; ... / 3600
+  double LAI_active = max(LAI_sunlit, 0.4);                                                             // safeguard
+
+  double crop_StomataResistance;                                                                        
+  if (A_gross_mol < 0.) {
+    crop_StomataResistance = 200.;  // [s m-1]   // FS: check what leads to a realistic leaf energy balance here: maybe 10000? or 5000? or 2000 or ...?
+  } else {
+    double crop_StomataResistance = (vw_AtmosphericCO2Concentration * (1.0 + vc_SaturationDeficit / pc_SaturationBeta)) / (pc_StomataConductanceAlpha * A_gross_mol);  // [s m-1]
+    // crop_StomataResistance_h = 20. * (vw_AtmosphericCO2Concentration * (1.0 + vc_SaturationDeficit_h / 1.5)) / (photosynthesis_mol_prev);  // [s m-1]
+  }
+
+  // surface resistance (to H2O) of the actual crop
+  double crop_SurfaceResistance = crop_StomataResistance / LAI_active;                           // [s m-1] FAO-56 eq.5
+
+  return {crop_AerodynamicResistance, crop_StomataResistance, crop_SurfaceResistance};
+}
+
+/**
  * @brief a simple single leaf temperature calculation based on energy balance
  * 
  * sources:
@@ -3625,42 +3676,72 @@ CropModule::GP_results CropModule::fc_CropGrossPhotosynthesis_h(double inst_diff
  * 
  * @param globalRad_Wpm2ps                global irradiance [W m-2]
  * @param Ta_K                            air temperature [K]
- * @param crop_AerodynamicResistance        [s m-1]
- * @param crop_SurfaceResistance          [s m-1]
+ * @param crop_AerodynamicResistance      [s m-1]
+ * @param crop_StomataResistance          [s m-1]
  * @param vc_VapourPressure               actual vapour pressure e_a [kPa]
  * @param vc_SaturatedVapourPressure      saturation vapour pressure e_s [kPa]
- * @param vc_SaturatedVapourPressureSlope de_s/dT [kPa °C-1]
- * @param vc_PsycrometerConstant          psychrometric constant [kPa °C-1]
+ * @param vc_SaturatedVapourPressureSlope S=d(e_s)/dT [kPa °C-1]
+ * @param vc_PsycrometerConstant
  * @return double canopy temperature [K]
  */
-double CropModule::leafTemperature(double globalRad_Wpm2ps,
-                         double Ta_K, 
-                         double crop_AerodynamicResistance, 
-                         double crop_StomataResistance, 
-                         double vc_VapourPressure,
-                         double vc_SaturatedVapourPressure,
-                         double vc_SaturatedVapourPressureSlope,
-                         double vc_PsycrometerConstant) {
+double CropModule::canopTemperature(double globalRad_Wpm2ps,
+                                    double Ta_K,
+                                    double crop_AerodynamicResistance,
+                                    double crop_StomataResistance,
+                                    double vc_VapourPressure,
+                                    double vc_SaturatedVapourPressure,
+                                    double vc_SaturatedVapourPressureSlope,
+                                    double vc_PsycrometerConstant) {
   const double StefanBoltzmanConstant = 5.67e-8;    // Stefan-Boltzmann constant [W m-2 K-4]    = 2.043 10-10 [MJ m-2 K-4 hour-1] / 3600 [seconds] = hourly FAO-56 version / 3600; (this is the Stefan-Boltzmann constant, not to be confused with the Boltzmann constant!)
   const double epsi = 0.95;                         // leaf emmesivity
-  const double a = 0.66;                            // leaf absorptance shortwave
-  const double b = 0.95;                            // leaf absorptance longwave
+  const double la_sw = 0.66;                            // leaf absorptance shortwave
+  const double la_lw = 0.95;                            // leaf absorptance longwave
 
-  double Te_K = 1.06 * Ta_K - 21;                                                                                   // effective sky temperature (for long-wave), Yu et al. eq.10
-  double Ri = a * globalRad_Wpm2ps + b * StefanBoltzmanConstant * pow(Te_K, 4.);                                    // leaf absorption in short-wave and long-wave radiation, Yu et al. eq.9
+  double Te_K = 1.06 * Ta_K - 21;                                                         // effective sky temperature (for long-wave), Yu et al. eq.10
+  double rho_air = 1e3 * vc_AtmosphericPressure / (287.1 * Ta_K);                         // air density [kg m-3],  using ideal gas law and specific gas constant for dry air
+  double Cp_air = 1005.;                                                                  // specific heat of air under constant pressure [J kg-1 K-1]
+  double Ri = la_sw * globalRad_Wpm2ps + la_lw * StefanBoltzmanConstant * pow(Te_K, 4.);  // leaf absorption in short-wave and long-wave radiation, Yu et al. eq.9
 
-  double rho_air = 1.2;                                                                                             // air density [kg m-3]
-  // double rho_air = vc_AtmosphericPressure / (287.1 * Ta_K);                                                         // air density using ideal gas law and specific gas constant for dry air
-  double Cp_air = 1005;                                                                                             // specific heat of air under constant pressure [J kg-1 K-1]
+  // assuming that crop_AerodynamicResistance for heat and for water vapor is similar
+  double he = rho_air * Cp_air / (vc_PsycrometerConstant * (crop_AerodynamicResistance + crop_StomataResistance));  // water tranfer coefficient, Paw 1987 eq.14a (=Yu et al. 2001 eq.13)
+  double ht = rho_air * Cp_air / crop_AerodynamicResistance;                                                        // heat transfer coefficient, Paw 1987 eq.14b (=Yu et al. 2001 eq.14)
 
-  double he = rho_air * Cp_air / (vc_PsycrometerConstant * (crop_AerodynamicResistance + crop_StomataResistance));  // water tranfer coefficient, Yu et al. eq.13; assuming that crop_AerodynamicResistance for heat and for water vapor is similar
-  double ht = rho_air * Cp_air / crop_AerodynamicResistance;                                                        // heat transfer coefficient, Yu et al. eq.14; assuming that crop_AerodynamicResistance for heat and for water vapor is similar
+  // // dry surface temperature (operative temperature)
+  // // Paw 1987 eq.4 and eq.5
+  // double term1 = epsi * StefanBoltzmanConstant * Ta_K * Ta_K;
+  // double a = 6. * term1;
+  // double b = ht + 4. * term1 * Ta_K;
+  // double c = term1 * Ta_K * Ta_K - Ri;
+  // double term2 = b * b - 4. * a * c;
+  // assert(term2 > 0.);
+  // double delta_T = (-b + sqrt(term2)) / (2. * a); // positive sqrt
+  // double delta_T = (-b - sqrt(term2)) / (2. * a); // negative sqrt
 
-  // Yu et al. 2001 eq.11, also see Paw 1987 eq.3 and eq.13
-  double num = (Ri - epsi * StefanBoltzmanConstant * pow(Ta_K, 4.) - he * (vc_SaturatedVapourPressure - vc_VapourPressure));
-  double denom = (4 * epsi * StefanBoltzmanConstant * pow(Ta_K, 3.) + ht + he * vc_SaturatedVapourPressureSlope); // num/denom results in a temperture difference [°C or K, which is eqivalent for a difference]
+  // // wet surface temperature of an organism
+  // // linear Taylor approximation, Paw 1987 eq.14 (=Yu et al. 2001 eq.11)
+  // double term1 = epsi * StefanBoltzmanConstant * Ta_K * Ta_K;
+  // double num = Ri - term1 * Ta_K * Ta_K -  he * (vc_SaturatedVapourPressure - vc_VapourPressure);
+  // double denom = term1 * Ta_K + ht + he * vc_SaturatedVapourPressureSlope;
+  // // double num = (Ri - epsi * StefanBoltzmanConstant * pow(Ta_K, 4.) - he * (vc_SaturatedVapourPressure - vc_VapourPressure));
+  // // double denom = (4 * epsi * StefanBoltzmanConstant * pow(Ta_K, 3.) + ht + he * S); // num/denom results in a temperture difference [°C or K, which is eqivalent for a difference]
+  // double delta_T = (num / denom);
 
-  return Ta_K + (num / denom);                                                                                    // canopy temperature = air temperature + temperature difference
+  // quadratic Taylor approximation, Paw 1987 eq.15
+  //           es = 0.6108 * exp((17.27 * T) / (T + 237.3));                               FAO-56 eq.11 
+  //    d(e_s)/dT = 4098. * es / ((T + 237.3) * (T + 237.3));                              FAO-56 eq.13 (using 17.27 * 273.3 = 4098.171)
+  //  d(e_s)²/dT² = d(e_s)/dT * (4098. - 2. * (T + 237.3)) / ((T + 237.3) * (T + 237.3));  
+  double vc_SaturatedVapourPressureCurvature = vc_SaturatedVapourPressureSlope * (4098.0 - 2.0 * (Ta_K + 237.3)) / ((Ta_K + 237.3) * (Ta_K + 237.3));
+  double term1 = epsi * StefanBoltzmanConstant * Ta_K * Ta_K;
+  double a = 6. * term1 + vc_SaturatedVapourPressureCurvature * he / 2.;
+  double b = ht + 4. * term1 * Ta_K + he * vc_SaturatedVapourPressureSlope;
+  double c = term1 * Ta_K * Ta_K - Ri + he * vc_SaturatedVapourPressure;
+  double term2 = b * b - 4. * a * c;
+  assert(term2 > 0.);
+  // double delta_T = (-b + sqrt(term2)) / (2. * a); // positive sqrt
+  double delta_T = (-2. * c) / (b + sqrt(term2)); // algebraic equivalent for positive sqrt;  should be more numerically stable 
+  // double delta_T = (-b - sqrt(term2)) / (2. * a); // negative sqrt; not physically meaningful
+
+  return Ta_K + delta_T;                                                                                    // canopy temperature = air temperature + temperature difference
 }
 
 /**
@@ -4444,7 +4525,7 @@ double CropModule::fc_ReferenceEvapotranspiration(double vw_MaxAirTemperature,
                                                   double vw_WindSpeed,
                                                   double vw_WindSpeedHeight,
                                                   double vw_AtmosphericCO2Concentration) {
-  // double vc_AtmosphericPressure; //[kPA]
+  double vc_AtmosphericPressure; //[kPA]
   // double vc_PsycrometerConstant; //[kPA °C-1]
   double vc_SaturatedVapourPressureMax; //[kPA]
   double vc_SaturatedVapourPressureMin; //[kPA]
@@ -4463,11 +4544,11 @@ double CropModule::fc_ReferenceEvapotranspiration(double vw_MaxAirTemperature,
   double pc_StomataConductanceAlpha = user_crops.pc_StomataConductanceAlpha; // Original: Yu et al. 2001; alpha = 0.06
   double pc_ReferenceAlbedo = user_crops.pc_ReferenceAlbedo; // FAO Green gras reference albedo from Allen et al. (1998)
 
-  // // Calculation of atmospheric pressure
-  // vc_AtmosphericPressure = 101.3 * pow(((293.0 - (0.0065 * vs_HeightNN)) / 293.0), 5.26);
+  // Calculation of atmospheric pressure
+  vc_AtmosphericPressure = 101.3 * pow(((293.0 - (0.0065 * vs_HeightNN)) / 293.0), 5.26);
 
-  // // Calculation of psychrometer constant - Luchtfeuchtigkeit
-  // vc_PsycrometerConstant = 0.000665 * vc_AtmosphericPressure;
+  // Calculation of psychrometer constant - Luchtfeuchtigkeit
+  vc_PsycrometerConstant = 0.000665 * vc_AtmosphericPressure;
 
   // Calc. of saturated water vapour pressure at daily max temperature
   vc_SaturatedVapourPressureMax = 0.6108 * exp((17.27 * vw_MaxAirTemperature) / (237.3 + vw_MaxAirTemperature));
@@ -4591,7 +4672,7 @@ double CropModule::fc_ReferenceEvapotranspiration_h(double vw_DewAirTemperature,
                                                     double vc_GlobalRadiation_h, double vc_GlobalRadiation_3h_b4_sunseth,
                                                     double vc_GrossPhotosynthesisReference_mol_h, bool is_daytime,
                                                     bool calc_soilHeatflux) {
-  // double vc_AtmosphericPressure;            //[kPA]      // FS: depends on vs_HeightNN, which is const over time; calculation moved towards the start of CropModule, after vs_HeightNN is read in
+  double vc_AtmosphericPressure;            //[kPA]      // FS: depends on vs_HeightNN, which is const over time; calculation moved towards the start of CropModule, after vs_HeightNN is read in
   // double vc_PsycrometerConstant;            //[kPA °C-1] // FS: definition moved to crop-module.h, in order to make it available for use in other methods
   // double vc_SaturatedVapourPressure_h;      //[kPA]      // FS: definition moved to crop-module.h, in order to make it available for use in other methods
   // double vc_VapourPressure_h;               //[kPA]      // FS: definition moved to crop-module.h, in order to make it available for use in other methods
@@ -4608,11 +4689,11 @@ double CropModule::fc_ReferenceEvapotranspiration_h(double vw_DewAirTemperature,
   double pc_StomataConductanceAlpha = user_crops.pc_StomataConductanceAlpha;  // Original: Yu et al. 2001; alpha = 0.06
   double pc_ReferenceAlbedo = user_crops.pc_ReferenceAlbedo;                  // FAO Green gras reference albedo from Allen et al. (1998)
 
-  // // Calculation of atmospheric pressure
-  // vc_AtmosphericPressure = 101.3 * pow(((293.0 - (0.0065 * vs_HeightNN)) / 293.0), 5.26);
+  // Calculation of atmospheric pressure
+  vc_AtmosphericPressure = 101.3 * pow(((293.0 - (0.0065 * vs_HeightNN)) / 293.0), 5.26);
 
-  // // Calculation of psychrometer constant - Luchtfeuchtigkeit
-  // vc_PsycrometerConstant = 0.000665 * vc_AtmosphericPressure;   // FS: this actually does not need to be calculated each day or hour, if it only depends on vs_HeightNN anyways
+  // Calculation of psychrometer constant - Luchtfeuchtigkeit
+  vc_PsycrometerConstant = 0.000665 * vc_AtmosphericPressure;   // FS: this actually does not need to be calculated each day or hour, if it only depends on vs_HeightNN anyways
 
   // Calculation of the saturated water vapour pressure
   vc_SaturatedVapourPressure_h = 0.6108 * exp((17.27 * vw_MeanAirTemperature_h) / (237.3 + vw_MeanAirTemperature_h)); // (eq.11)
@@ -4760,7 +4841,7 @@ double CropModule::fc_ReferenceEvapotranspiration_notApplied(double vw_MaxAirTem
                                                   double vw_WindSpeed,
                                                   double vw_WindSpeedHeight,
                                                   double vw_AtmosphericCO2Concentration) {
-  // double vc_AtmosphericPressure; //[kPA]
+  double vc_AtmosphericPressure; //[kPA]
   // double vc_PsycrometerConstant; //[kPA °C-1]
   double vc_SaturatedVapourPressureMax; //[kPA]
   double vc_SaturatedVapourPressureMin; //[kPA]
@@ -4778,11 +4859,11 @@ double CropModule::fc_ReferenceEvapotranspiration_notApplied(double vw_MaxAirTem
   double pc_StomataConductanceAlpha = cropPs.pc_StomataConductanceAlpha; // Original: Yu et al. 2001; alpha = 0.06
   double pc_ReferenceAlbedo = cropPs.pc_ReferenceAlbedo; // FAO Green gras reference albedo from Allen et al. (1998)
 
-  // // Calculation of atmospheric pressure
-  // vc_AtmosphericPressure = 101.3 * pow(((293.0 - (0.0065 * vs_HeightNN)) / 293.0), 5.26);
+  // Calculation of atmospheric pressure
+  vc_AtmosphericPressure = 101.3 * pow(((293.0 - (0.0065 * vs_HeightNN)) / 293.0), 5.26);
 
-  // // Calculation of psychrometer constant - Luchtfeuchtigkeit
-  // vc_PsycrometerConstant = 0.000665 * vc_AtmosphericPressure;
+  // Calculation of psychrometer constant - Luchtfeuchtigkeit
+  vc_PsycrometerConstant = 0.000665 * vc_AtmosphericPressure;
 
   // Calc. of saturated water vapour pressure at daily max temperature
   vc_SaturatedVapourPressureMax = 0.6108 * exp((17.27 * vw_MaxAirTemperature) / (237.3 + vw_MaxAirTemperature));

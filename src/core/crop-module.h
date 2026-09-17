@@ -174,6 +174,7 @@ public:
    *  term2
    */
   std::tuple<double, double, double, double> vc_KTkc_vc_KTko(double vw_MeanAirTemperature) const;
+
   struct A_rubisco_results {
       double vc_AssimilationRate;
       double vc_AssimilationRateReference;
@@ -195,15 +196,31 @@ public:
    */
   A_rubisco_results A_rubisco(double vw_MeanAirTemperature, double Cc, double O, Voc::CPData &_cropPhotosynthesisResults) const;
 
+  struct crop_r {
+    double r_aero;  //crop aerodynamic resistance
+    double r_stom;  //crop stomata resistance
+    double r_surf;  //crop surface resistance
+  };
+  crop_r crop_aerodyn_stomata_surface_resistances(double vc_SaturatedVapourPressure,
+                                                  double vc_VapourPressure,
+                                                  double vc_CropHeight,
+                                                  double A_gross,
+                                                  double LAI_sunlit,
+                                                  double vw_AtmosphericCO2Concentration,
+                                                  double pc_StomataConductanceAlpha,
+                                                  double pc_SaturationBeta,
+                                                  double vs_HeightNN,
+                                                  double vw_WindSpeed,
+                                                  double vw_WindSpeedHeight);
 
-  double leafTemperature(double globalRad_Wpm2ps,
-                         double Ta_K, 
-                         double vc_AerodynamicResistance, 
-                         double vc_StomataResistance,
-                         double vc_VapourPressure,
-                         double vc_SaturatedVapourPressure,
-                         double vc_SaturatedVapourPressureSlope,
-                         double vc_PsycrometerConstant);
+  double canopTemperature(double globalRad_Wpm2ps,
+                          double Ta_K,
+                          double crop_AerodynamicResistance,
+                          double crop_SurfaceResistance,
+                          double vc_VapourPressure,
+                          double vc_SaturatedVapourPressure,
+                          double vc_SaturatedVapourPressureSlope,
+                          double vc_PsycrometerConstant);
 
   struct hp {
     double leafT;
@@ -685,10 +702,7 @@ private:
   double vc_GreenAreaIndex{0.0};
   double vc_GrossAssimilates{0.0};
   double vc_GrossPhotosynthesis{0.0}; //! old GPHOT
-  double vc_GrossPhotosynthesis_h_old{0.0};                                 // FS: gross photosynthesis of the previous hour
   double vc_GrossPhotosynthesis_mol{0.0};
-  // double vc_GrossPhotosynthesis_mol_h_old{0.0};                             // FS: gross photosynthesis of the previous hour
-  // double vc_GrossPhotosynthesis_sl_mol_h_old{0.0};                          // FS: gross photosynthesis of the previous hour
   double vc_GrossPhotosynthesisReference_mol{0.0};
   double vc_GrossPrimaryProduction{0.0};
   bool vc_GrowthCycleEnded{false};
@@ -701,14 +715,15 @@ private:
   double vc_SaturatedVapourPressure_h{};                                    // [kPa]      FS: calculated in CropModule::fc_ReferenceEvapotranspiration_h(...);
   double vc_VapourPressure_h{};                                             // [kPa]      FS: calculated in CropModule::fc_ReferenceEvapotranspiration_h(...);
   double vc_SaturatedVapourPressureSlope_h{};                               // [kPa °C-1] FS: calculated in CropModule::fc_ReferenceEvapotranspiration_h(...);
+  double vc_crop_AerodynamicResistance_h{};                                 // [s m-1]    FS: calculated in CropModule::crop_aerodyn_stomata_surface_resistances(...);
+  double vc_crop_StomataResistance_h{};                                     // [s m-1]    FS: calculated in CropModule::crop_aerodyn_stomata_surface_resistances(...);
+  double vc_crop_SurfaceResistance_h{};                                     // [s m-1]    FS: calculated in CropModule::crop_aerodyn_stomata_surface_resistances(...);
   double pc_InitialKcFactor{}; //! old Kcini
   std::vector<double> pc_InitialOrganBiomass;
   double pc_InitialRootingDepth{};
   double vc_InterceptionStorage{0.0};
   double vc_KcFactor{0.6}; //! old FKc
   double vc_LeafAreaIndex{0.0}; //! old LAI
-  double vc_LAI_sunlit_h_old{0.0};                                          // sunlit leaf area index of the previous hour
-  double vc_f_sunlit_h_old{0.0};                                            // fraction of sunlit leaves for the previous hour
   std::vector<double> vc_sunlitLeafAreaIndex;
   std::vector<double> vc_shadedLeafAreaIndex;
   double pc_LowTemperatureExposure{};
