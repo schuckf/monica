@@ -153,6 +153,7 @@ hPhoto::PAR_radiation_result hPhoto::PAR_radiation(double global_rad, double ext
 dL_result hPhoto::Spitters_canop_photo_dL(double beta, double L, double I0_dr, double I0_df, double A_m, double epsilon, double k_df, double sigma, bool kgpha, int leaf_angle_integration_style)
 {
   assert(L > 0.);
+  assert(epsilon > 0.);
 
   //beta *= deg2rad                     // convert [deg] to [rad] if input is in [deg]
   assert((beta >= 0.) && (beta <= (0.5 * M_PI)));
@@ -307,7 +308,7 @@ photo_result hPhoto::Spitters_canop_photo_multilayer(double beta, double LAI, do
 
   // vector<double> canopy_layers;
   double A_canop = 0.;
-  double LAI_sl_canop = 0., A_sl_canop = 0., A_sh_canop = 0.;
+  double f_sl_canop = 0., A_sl_canop = 0., A_sh_canop = 0.;
   for (int i = 0; i < n_canopy_layers; ++i) {
     // canopy_layers.push_back((i + 0.5) * dl);
 
@@ -322,12 +323,12 @@ photo_result hPhoto::Spitters_canop_photo_multilayer(double beta, double LAI, do
 
     // sum over canopy layers (= numerical integration)
     A_canop += A * dl;
-    LAI_sl_canop += dL_res.f_sl * L * dl;
+    f_sl_canop += dL_res.f_sl * dl;
     A_sl_canop += dL_res.f_sl * dL_res.A_sl * dl;
     A_sh_canop += (1. - dL_res.f_sl) * dL_res.A_sh * dl;
   }
 
-  double f_sl_canop = LAI_sl_canop / LAI;
+  double LAI_sl_canop = f_sl_canop * LAI;
 
   // return A_canop * LAI;
   return {A_canop * LAI, LAI_sl_canop, f_sl_canop, A_sl_canop * LAI_sl_canop, A_sh_canop * (LAI - LAI_sl_canop)};
@@ -349,7 +350,7 @@ photo_result hPhoto::Spitters_canop_photo_3p(double beta, double LAI, double I0_
 
   // selection of canopy depths (LAIC from top)
   double A_canop = 0., L, A = 0.;
-  double LAI_sl_canop = 0., A_sl_canop = 0., A_sh_canop = 0.;
+  double f_sl_canop = 0., A_sl_canop = 0., A_sh_canop = 0.;
 
   for (int l = 0; l < 3; ++l) {
     L = LAI * canopy_layers[l];  // partial cumulated leaf area index at various canopy depths (= LAIC from Spitters et al. 1989)
@@ -363,12 +364,12 @@ photo_result hPhoto::Spitters_canop_photo_3p(double beta, double LAI, double I0_
 
     // 3-point gaussian integration
     A_canop += A * gaussian_weights[l];
-    LAI_sl_canop += dL_res.f_sl * L * gaussian_weights[l];
+    f_sl_canop += dL_res.f_sl * gaussian_weights[l];
     A_sl_canop += dL_res.f_sl * dL_res.A_sl* gaussian_weights[l];
     A_sh_canop += (1. - dL_res.f_sl) * dL_res.A_sh * gaussian_weights[l];
   }
 
-  double f_sl_canop = LAI_sl_canop / LAI;
+  double LAI_sl_canop = f_sl_canop * LAI;
 
   // return A_canop * LAI;
   return {A_canop * LAI, LAI_sl_canop, f_sl_canop, A_sl_canop * LAI_sl_canop, A_sh_canop * (LAI - LAI_sl_canop)};
