@@ -162,7 +162,7 @@ dL_result hPhoto::Spitters_canop_photo_dL(double beta, double L, double I0_dr, d
   // eq. 1
   // "sigma = scattering coefficient of single leaves and for visible radiation [...]. Hence, a fraction 1-sigma of the incoming flux is potentially available for absorption by the canopy."
   double first = (1. - pow(1 - sigma, 0.5)) / (1. + pow(1. - sigma, 0.5));  // reflection of a canopy of horizontal leaves (Goudriaan, 1977, p. 14,31, cited from Spitters 1986)
-  double second = 2. / (1. + 1.6 * sinbeta);                                // approximate correction factor for a spherical leaf angle distribution (Goudriaan, personal communication, cited from Spitters 1986)
+  double second = 2. / (1. + 1.6 * sinbeta);                                // approximate correction factor for a spherical leaf angle distribution (personal communication between Spitters and Goudriaan, cited from Spitters 1986)
   double rho = first * second;                                              // reflection coefficient of a green, closed vegetation
 
   /*
@@ -201,9 +201,9 @@ dL_result hPhoto::Spitters_canop_photo_dL(double beta, double L, double I0_dr, d
   // eq. 10, eq. 11, eq. 12
   double Ia_df = (1. - rho) * I0_df * k_df * exp(-k_df * L);                                                    // absorption of the diffuse flux, derived from eq. 3
   // double Ia_dr = (1. - rho) * I0_dr * pow(1. - sigma, 0.5) * k_bl * exp(- pow(1. - sigma, 0.5) * k_bl * L);  // absorption of the direct flux, derived from eq. 4
-  double Ia_dr = (sin(beta) <= hPhoto::eps) ? 0.0 : (1. - rho) * I0_dr * k_dr * exp(-k_dr * L);                 // eq. 11, re-arranged to use k_dr similarly to Spitters et al. (1989, p. 154), safeguard added
+  double Ia_dr = (sinbeta <= hPhoto::eps) ? 0.0 : (1. - rho) * I0_dr * k_dr * exp(-k_dr * L);                   // eq. 11, re-arranged to use k_dr similarly to Spitters et al. (1989, p. 154), safeguard added
   // double Ia_drdr = (1. - sigma) * I0_dr * k_bl * exp(- pow(1. - sigma, 0.5) * k_bl * L);                     // Of the direct component of the direct flux (eq. 5), the non-scattered part 1-sigma is absorbed
-  double Ia_drdr = (sin(beta) <= hPhoto::eps) ? 0.0 : (1. - sigma) * I0_dr * k_bl * exp(- k_bl * L);            // eq. 11, but with k_bl (instead of k_dr) in the exponent; similar to implementation in Spitters et al. (1989, p. 154), safeguard added
+  double Ia_drdr = (sinbeta <= hPhoto::eps) ? 0.0 : (1. - sigma) * I0_dr * k_bl * exp(- k_bl * L);              // eq. 11, but with k_bl (instead of k_dr) in the exponent; similar to implementation in Spitters et al. (1989, p. 154), safeguard added
 
   // shaded leaf area
   // eq. 13
@@ -224,7 +224,7 @@ dL_result hPhoto::Spitters_canop_photo_dL(double beta, double L, double I0_dr, d
   if ((leaf_angle_integration_style == 0) || (leaf_angle_integration_style == 10)) {  // None
     // sunlit leaf area
     // eq. 14
-    double Ia_sl = (sin(beta) <= hPhoto::eps) ? Ia_sh : Ia_sh + (1. - sigma) * k_bl * I0_dr;         // absorbed light energy sunlit leaf area (receives diffuse and direct radiation) [J m-2 leaf s-1], added safeguard
+    double Ia_sl = (sinbeta <= hPhoto::eps) ? Ia_sh : Ia_sh + (1. - sigma) * k_bl * I0_dr;         // absorbed light energy sunlit leaf area (receives diffuse and direct radiation) [J m-2 leaf s-1], added safeguard
     if (leaf_angle_integration_style == 10) {
       A_sl = A_m * (epsilon * Ia_sl / (epsilon * Ia_sl + A_m)); // None, but with rectangular hyperbola function
     } else {
@@ -234,7 +234,7 @@ dL_result hPhoto::Spitters_canop_photo_dL(double beta, double L, double I0_dr, d
     // correction to account for the variation in leaf angle and thus in illumination intensity for sunlit leaf area
     // FS: This is crucial, since photosynthesis is not linear. It is not sufficient to average irradiances over leaf angles beforehand - instead, photosynthesis should be averaged by integrating over leaf angles.
     // eq. 16, eq. 17
-    double Ia_sldr = (sinbeta <= hPhoto::eps) ? 0.0 : (1. - sigma) * I0_dr / sinbeta;  // direct flux is absorbed by a leaf perpendicular to the direct beam, custom safeguard added since
+    double Ia_sldr = (sinbeta <= hPhoto::eps) ? 0.0 : (1. - sigma) * I0_dr / sinbeta;  // direct flux is absorbed by a leaf perpendicular to the direct beam, safeguard added
     if (leaf_angle_integration_style == 1) {          // Spitters 1986, custom implementation including Wageningen school implementations-inspired numerical safeguards;
       const double A_m_nsmin = kgpha ? 2.0 : 0.2; // 0.2 [g CO2 m-2 leaf h-1] or 2 [kg CO2 ha-1 leaf h-1]; Wageningen school-style numerical safeguard;
                                                   // see e.g. WOFOST (https://github.com/ajwdewit/WOFOST/blob/deac197d3c74741832b815581699a6c825894758/sources/w60lib/assim.for)
@@ -260,7 +260,6 @@ dL_result hPhoto::Spitters_canop_photo_dL(double beta, double L, double I0_dr, d
       if (Ia_sldr <= hPhoto::eps) {
         A_sl = A_sh;  // this is the limit of eq. 17 when Ia_sldr -> 0
       } else {
-        // !!! ToDo: check this again !!!
         // A_sl = A_m * (1. - (A_m / (epsilon * Ia_sldr)) * log1p((epsilon * Ia_sldr * (A_m - A_sh)) / (A_m * A_m)));                               // integrating rectangular hyperbola over leaf angles (assuming spherical distribution),
                                                                                                                                                     // in a similar way as done in eq.17 for the exponential light response curve
         A_sl = A_m * (1. - (max(A_m_nsmin, A_m) / (epsilon * Ia_sldr)) * log1p((epsilon * Ia_sldr * (A_m - A_sh)) / (A_m * max(A_m_nsmin, A_m))));  // added numerical safeguard
@@ -374,6 +373,136 @@ photo_result hPhoto::Spitters_canop_photo_3p(double beta, double LAI, double I0_
   // return A_canop * LAI;
   return {A_canop * LAI, LAI_sl_canop, f_sl_canop, A_sl_canop * LAI_sl_canop, A_sh_canop * (LAI - LAI_sl_canop)};
 }
+
+
+Spitters_canop_radiation_dL_result Spitters_canop_radiation_dL(double beta, double L, double I0_dr, double I0_df, double k_df, double sigma)
+{
+  assert((beta >= 0.) && (beta <= (0.5 * M_PI)));
+  double sinbeta = max(eps, sin(beta));                                                             // beta is the solar elevation angle [rad]
+  double first = (1. - pow(1 - sigma, 0.5)) / (1. + pow(1. - sigma, 0.5));                          // reflection of a canopy of horizontal leaves (Goudriaan, 1977, p. 14,31, cited from Spitters 1986)
+  double second = 2. / (1. + 1.6 * sinbeta);                                                        // approximate correction factor for a spherical leaf angle distribution (personal communication between Spitters and Goudriaan, cited from Spitters 1986)
+  double rho = first * second;                                                                      // reflection coefficient of a green, closed vegetation
+  double clusterfactor = k_df / (0.8 * pow(1. - sigma, 0.5));                                       // empirical k_df (clustered leaves) / theoretical k_df (randomly distributed leaves); clusterfactor (Spitters et al. 1989, p. 171)
+  double k_bl = 0.5 / sinbeta * clusterfactor;
+  double f_sl = exp(-k_bl * L);                                                                     // fraction sunlit leaf area; equals the fraction of the direct beam reaching that layer (see eq. 5)
+  // double f_sl = exp(-k_bl * L) * clusterfactor;                                                  // Spitters et al. 1989, p. 154 seems to use eq. 19 (Spitters 1986), corrected with clusterfactor (Spitters et al. 1989, p. 171)
+  /* FS: This seems somewhat strange, since k_bl has already been corrected with clusterfactor before (k_bl = 0.5 / sinbeta * clusterfactor),
+      so Spitters et al. 1989, p. 154 (=SUCROS87?) seem to do f_sl = np.exp(-(0.5 / sinbeta * clusterfactor) * L) * clusterfactor
+      WOFOST however just uses f_sl = np.exp(-k_bl * L), which is np.exp(-(0.5 / sinbeta * clusterfactor) * L) in the FORTRAN version (https://github.com/ajwdewit/WOFOST/blob/deac197d3c74741832b815581699a6c825894758/sources/w60lib/assim.for#L81)
+      as well as the python versions (pcse assim7 and assim8, see https://github.com/ajwdewit/pcse/blob/4d9f0e4f542e9062db338aaf1a227a75f1b03949/pcse/crop/assimilation.py#L147 and https://github.com/ajwdewit/pcse/blob/4d9f0e4f542e9062db338aaf1a227a75f1b03949/pcse/crop/assimilation.py#L387)
+  */
+  double k_dr = k_bl * pow(1. - sigma, 0.5);                                                        // extinction coefficient for total direct PAR flux; non-black leaves correction from Spitters et al. (1989)
+  double Ia_df = (1. - rho) * I0_df * k_df * exp(-k_df * L);                                        // absorption of the diffuse flux, derived from eq. 3
+  double Ia_dr = (sinbeta <= hPhoto::eps) ? 0.0 : (1. - rho) * I0_dr * k_dr * exp(-k_dr * L);       // eq. 11, re-arranged to use k_dr similarly to Spitters et al. (1989, p. 154), safeguard added
+  double Ia_drdr = (sinbeta <= hPhoto::eps) ? 0.0 : (1. - sigma) * I0_dr * k_bl * exp(- k_bl * L);  // eq. 11, but with k_bl (instead of k_dr) in the exponent; similar to implementation in Spitters et al. (1989, p. 154), safeguard added
+  double Ia_sh = max(0.0, Ia_df + (Ia_dr - Ia_drdr));                                               // absorbed light energy shaded leaf area (absorbs the diffuse flux and the diffused component of the direct flux) [J m-2 leaf s-1], safeguard added
+  double Ia_sldr = (sinbeta <= hPhoto::eps) ? 0.0 : (1. - sigma) * I0_dr / sinbeta;                          // direct flux is absorbed by a leaf perpendicular to the direct beam, safeguard added
+  return {Ia_sh, Ia_sldr, f_sl, Ia_dr};
+}
+
+double Spitters_A_sh_dL(double Ia_sh, double Amax_sh, double epsilon_sh, hPhoto::lrc_style lrc)
+{
+  if (lrc == hPhoto::lrc_style::exponential) {
+    // exponential light respone curve
+    return(Amax_sh < eps) ? 0. : Amax_sh * (1. - exp(-epsilon_sh * Ia_sh / Amax_sh));
+  } else if (lrc == hPhoto::lrc_style::rectangular_hyperbola) {
+    // rectangular hyperbola light respone curve
+    return(Amax_sh < eps) ? 0. : Amax_sh * (epsilon_sh * Ia_sh / (epsilon_sh * Ia_sh + Amax_sh));
+  } else if (lrc == hPhoto::lrc_style::nonrectangular_hyperbola) {
+    // non-rectangular hyperbola
+    throw runtime_error("Light response curve style nonrectangular_hyperbola not implemented!");
+  } else {
+    throw runtime_error("Incvalid light response curve style!");
+  }
+}
+
+double Spitters_A_sl_dL(double A_sh, double Ia_sldr, double Amax_sl, double epsilon_sl, bool kgpha, hPhoto::lrc_style lrc)
+{
+  const double A_m_nsmin = kgpha ? 2.0 : 0.2; // 0.2 [g CO2 m-2 leaf h-1] or 2 [kg CO2 ha-1 leaf h-1]; Wageningen school-style numerical safeguard;
+                                              // see e.g. WOFOST (https://github.com/ajwdewit/WOFOST/blob/deac197d3c74741832b815581699a6c825894758/sources/w60lib/assim.for)
+                                              // or python crop smulation environment (pcse = WOFOST pure python implementation, https://github.com/ajwdewit/pcse/blob/4d9f0e4f542e9062db338aaf1a227a75f1b03949/pcse/crop/assimilation.py),
+                                              // which both use 2.0 [kg CO2 ha-1 leaf h-1]
+  if (lrc == hPhoto::lrc_style::exponential) {
+    // exponential light respone curve integrated over leaf angles and with numerical safeguards
+    // Spitters 1986 eq.17, custom implementation including Wageningen school implementations-inspired numerical safeguards;
+    // if (Ia_sldr <= hPhoto::eps) {return A_sh};  // this is the limit of eq. 17 when Ia_sldr -> 0
+    return (Ia_sldr <= hPhoto::eps) ? A_sh : Amax_sl * (1. - (Amax_sl - A_sh) * (1. - exp(-epsilon_sl * Ia_sldr / max(A_m_nsmin, Amax_sl))) / (epsilon_sl * Ia_sldr));
+  } else if (lrc == hPhoto::lrc_style::rectangular_hyperbola) {
+    // rectangular hyperbola light respone curve integrated over leaf angles and with numerical safeguards
+    // A_sl = A_m * (1. - (A_m / (epsilon * Ia_sldr)) * log1p((epsilon * Ia_sldr * (A_m - A_sh)) / (A_m * A_m))); // integrating rectangular hyperbola over leaf angles (assuming spherical distribution),
+                                                                                                                  // in a similar way as done in Spitters 1986 eq.17 for the exponential light response curve
+    // if (Ia_sldr <= hPhoto::eps) {return A_sh};  // this is the limit of eq. 17 when Ia_sldr -> 0
+    return (Ia_sldr <= hPhoto::eps) ? A_sh : Amax_sl * (1. - (max(A_m_nsmin, Amax_sl) / (epsilon_sl * Ia_sldr)) * log1p((epsilon_sl * Ia_sldr * (Amax_sl - A_sh)) / (Amax_sl * max(A_m_nsmin, Amax_sl))));
+  } else if (lrc == hPhoto::lrc_style::nonrectangular_hyperbola) {
+    // non-rectangular hyperbola
+    throw runtime_error("Light response curve style nonrectangular_hyperbola not implemented!");
+  } else {
+    throw runtime_error("Incvalid light response curve style!");
+  }
+}
+
+
+// // photosynthesis on canopy level, solved per canopy layer for shaded and sunlit leaves, integrated over canopy layers using 3 point integration
+// photo_result canop_photo_3p(
+//     double pc_CarboxylationPathway,
+//     double pc_MaxAssimilationRate,
+//     double beta,
+//     double LAI,
+//     double I0_dr,
+//     double I0_df,
+//     double k_df,
+//     double sigma,
+//     bool kgpha)
+// {
+//     static const double canopy_layers[3]   = {0.112702, 0.5, 0.887298};
+//     static const double gaussian_weights[3] = {0.277778, 0.444444, 0.277778};
+
+//     double A_canop = 0.0;
+//     double gs_canop = 0.0;
+//     for (int l = 0; l < 3; ++l)
+//     {
+//         double L = LAI * canopy_layers[l];          // cumulated LAI
+
+//         // radiation (once per layer)
+//         auto rad = Spitters_canop_radiation_dL(beta, L, I0_dr, I0_df, k_df, sigma);
+
+//         /* for one layer dL
+//           if (pc_CarboxylationPathway == 1) {
+//             // calculate temperature-dependent parameters shaded & sunlit
+//             // ...
+
+//             // shaded
+//             double Vcmax_sh = calcVcmax(pc_MaxAssimilationRate, kin_sh.KTvmax);
+//             Gamma_sh = calcCO2CompensationPoint(Oi, Vcmax_sh, kin_sh.Mkc, kin_sh.Mko);
+//             double Ci_sh_eff = std::max(std::max(Ci_sh, eps), Gamma_sh + eps);
+//             epsilon_sh = calcRUE_C3(Ci_sh_eff, Gamma_sh);
+//             Amax_sh = calcAmaxC3(T_sh, Ci_sh_eff, Oi, Gamma_sh, Vcmax_sh, kin_sh.Mkc, kin_sh.Mko, pc_MinimumTemperatureForAssimilation);
+
+//             // sunlit
+//             double Vcmax_sl = calcVcmax(pc_MaxAssimilationRate, kin_sl.KTvmax);
+//             Gamma_sl = calcCO2CompensationPoint(Oi, Vcmax_sl, kin_sl.Mkc, kin_sl.Mko);
+//             double Ci_sl_eff = std::max(std::max(Ci_sl, eps), Gamma_sl + eps);
+//             epsilon_sl = calcRUE_C3(Ci_sl_eff, Gamma_sl);
+//             Amax_sl = calcAmaxC3(T_sl, Ci_sl_eff, Oi, Gamma_sl, Vcmax_sl, kin_sl.Mkc, kin_sl.Mko, pc_MinimumTemperatureForAssimilation);
+
+//             // calculate photosynthesis
+//             A_sh = Spitters_A_sh_dL(rad.Ia_sh, Amax_sh, epsilon_sh, hPhoto::lrc_style::rectangular_hyperbola);                // Spitters_A_sh_dL(rad.Ia_sh, Amax_sh, epsilon_sh);
+//             A_sl = Spitters_A_sl_dL(A_sh, rad.Ia_sldr, Amax_sl, epsilon_sl, kgpha, hPhoto::lrc_style::rectangular_hyperbola); // Spitters_A_sl_dL(A_sh, rad.Ia_sldr, Amax_sl, epsilon_sl, A_m_nsmin);
+//           } else: {
+//             // calculate temperature-dependent parameters shaded & sunlit
+//             // ...
+
+//             // calculate photosynthesis
+//             // ...
+//           }
+//         */
+
+//         // integrate
+//         A_canop += res_dL.A * gaussian_weights[l];
+//         gs_canop += res_dL.gs * gaussian_weights[l];
+//     }
+//     return A_canop * LAI;
+// }
 
 
 double hPhoto::ASSIM(double AMAX, double EFF, double LAI, double KDIF, double SINB, double PARDIR, double PARDIF) {

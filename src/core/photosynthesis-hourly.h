@@ -13,7 +13,7 @@ constexpr double M_PI = 3.14159265358979323846;  // M_PI = 4 * atan(1.)
 #endif
 
 namespace hPhoto {
-
+// const double M_PI = 4 * atan(1.);
 const double eps = 1e-6; // machine epsilon
 
 
@@ -28,6 +28,18 @@ static_assert(
     static_cast<int>(unit::Jpm2ps)   == 1 &&
     static_cast<int>(unit::Wpm2ps)   == 2 &&
     static_cast<int>(unit::umolpm2ps)== 3,
+    "out_unit order must match conversion pipeline"
+);
+
+enum class lrc_style {// light response curve style
+  exponential = 0,
+  rectangular_hyperbola,
+  nonrectangular_hyperbola
+};
+static_assert(
+    static_cast<int>(lrc_style::exponential)              == 0 &&
+    static_cast<int>(lrc_style::rectangular_hyperbola)    == 1 &&
+    static_cast<int>(lrc_style::nonrectangular_hyperbola) == 2,
     "out_unit order must match conversion pipeline"
 );
 
@@ -147,6 +159,7 @@ struct PAR_radiation_result {
  * @return hPhoto::PAR_radiation_result direct [out_unit PAR], diffuse [out_unit PAR]
  */
 PAR_radiation_result PAR_radiation(double global_rad, double extra_terr_rad, double solar_el, bool cscor=true, bool parcor=true, double parfrac=0.45, unit out_unit=unit::MJpm2ps);
+
 
 struct dL_result {
     double f_sl;    // fraction sunlit
@@ -282,6 +295,68 @@ photo_result Spitters_canop_photo_multilayer(double beta, double LAI, double I0_
 photo_result Spitters_canop_photo_3p(double beta, double LAI, double I0_dr, double I0_df, double A_m, double epsilon, double k_df=0.6, double sigma=0.2, bool kgpha=false, int leaf_angle_integration_style=1);
 
 
+struct Spitters_canop_radiation_dL_result {
+    double Ia_sh;   // absorbed light shaded leaf
+    double Ia_sldr; // absorbed light by a leaf perpendicular to the direct beam
+    double f_sl;    // fraction sunlit leaf area
+    double Ia_dr;   // absorbed direct radiation (leaf level)
+};
+/**
+ * @brief 
+ * 
+ * @param beta  solar elevation angle [rad].
+ * @param L     partial cumulated leaf area index at various canopy depths (= LAIC from Spitters et al. 1989).
+ *                leaf area index [m2 m-2] * canopy layer depth [0...1, starting from the top]
+ * @param I0_dr direct PAR flux light intensity at the top of the canopy [J m-2 ground s-1] (=direct PAR irradiance on a horizontal plane).
+ * @param I0_df diffuse PAR flux light intensity at the top of the canopy [J m-2 ground s-1] (=diffuse PAR irradiance).
+ * @param k_df  empirical extinction coefficient for diffuse radiation. Default is 0.6.
+ *                0.60 for spring wheat, 0.65 for maize, 1.00 for potato and 0.69 for sugar beet, according to Spitters et al. (1989), p. 151 and pp. 178-180.
+ *                See Spitters et al. (1989), Chapter 4.1.4 "Crop species and site characteristics", pp. 171-172:
+ *                "Typical values of k are 0.4 to 0.7 for monocotyledons and 0.65 to 1.1 for broadleaved dicotyledons (Monteith, 1969).
+ *                 The extinction coefficient can be estimated from measurements of PAR above and below a canopy with a known LAI (Equation 62 [I_L = (1 - rho) * I_0 *exp(-k * L)]),
+ *                 making sure that PAR is measured rather than total global radiation. The extinction coefficient for total radiation is about 2/3 that of PAR.
+ *                 The extinction coefficient is best measured under a uniform overcast sky; then all radiation is diffuse so that the extinction coefficient is not affected by solar elevation."
+ *                In WOFOST, this seems to be development-stage dependent, (https://github.com/ajwdewit/WOFOST_crop_parameters/blob/ec57fc0ddd3f0924b707ec4482e46fa987e8ee0a/wheat.yaml#L202).
+ * @param sigma scattering coefficient of single leaves and for visible radiation [-]. Default is 0.2.
+ *                See Spitters et al. (1989). In the order of 0.20. 0.20 for spring wheat, maize, potato, sugar beet.
+ * @param kgpha input (A_m, epsilon) and output unit in [kg ha-1] instead of [g m-2]. Default is false.
+ * @return Spitters_canop_radiation_dL_result 
+ */
+Spitters_canop_radiation_dL_result Spitters_canop_radiation_dL(double beta, double L, double I0_dr, double I0_df, double k_df=0.6, double sigma=0.2);
+
+
+/**
+ * @brief 
+ * 
+ * @param Ia_sh      absorbed light shaded leaf
+ * @param Amax_sh    assimilation rate at light saturation [g CO2 m-2 leaf h-1] (=asymptote of light response curve). Temperature-dependent.
+ * @param epsilon_sh light-use efficiency [g CO2 J-1 absorbed] (=initial slope of light response curve). Temperature-dependent.
+ *                     ARCWHEAT1: "dA/dI at I = 0".
+ *                     MONICA: "transition between photosynthetic quantum use efficiency and light saturated photosynthesis".
+ * @param lrc        light response curve style
+ * @return assimilation from shaded leaves for the canopy layer
+ */
+double Spitters_A_sh_dL(double Ia_sh, double Amax_sh, double epsilon_sh, hPhoto::lrc_style lrc=hPhoto::lrc_style::exponential);
+
+
+/**
+ * @brief 
+ * 
+ * @param A_sh       assimilation from shaded leaves for the canopy layer
+ * @param Ia_sldr    absorbed light by a leaf perpendicular to the direct beam
+ * @param Amax_sl    assimilation rate at light saturation [g CO2 m-2 leaf h-1] (=asymptote of light response curve). Temperature-dependent.
+ * @param epsilon_sl light-use efficiency [g CO2 J-1 absorbed] (=initial slope of light response curve). Temperature-dependent.
+ *                     ARCWHEAT1: "dA/dI at I = 0".
+ *                     MONICA: "transition between photosynthetic quantum use efficiency and light saturated photosynthesis".
+ * @param kgpha      input (A_m, epsilon) and output unit in [kg ha-1] instead of [g m-2]. Default is false.
+ * @param lrc        light response curve style
+ * @return assimilation from sunlit leaves for the canopy layer 
+ */
+double Spitters_A_sl_dL(double A_sh, double Ia_sldr, double Amax_sl, double epsilon_sl, bool kgpha, hPhoto::lrc_style lrc=hPhoto::lrc_style::exponential);
+
+
+
+
 /**
  * @brief Gross assimilation ported from SUCROS87/WOFOST; for testing purposes and compariosn only
  * 
@@ -299,7 +374,3 @@ photo_result Spitters_canop_photo_3p(double beta, double LAI, double I0_dr, doub
 double ASSIM(double AMAX, double EFF, double LAI, double KDIF, double SINB, double PARDIR, double PARDIF);
 
 }
-
-
-
-
