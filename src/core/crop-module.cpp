@@ -3632,12 +3632,11 @@ CropModule::GP_results CropModule::fc_CropGrossPhotosynthesis_h(double inst_diff
     << "kdf=" << kdf << endl
     << "-*-" << endl;
 
-    int style = 11; // style of the integration over all leaf angles (11 and 12 should have the highest consistency with daily MONICA)
-                    // 11 = rectangular hyperbola light response curve, custom implementation with custom leaf angle integration and numerical safeguards (inspired by style 1)
-                    // 12 = rectangular hyperbola light response curve, using 3pt gauss integration over leaf angles (inspired by style 2)
-    auto hGp_res = hPhoto::Spitters_canop_photo_3p(solarElevation_rad, vc_LeafAreaIndex, inst_dir_rad, inst_diff_rad, vc_AssimilationRate_hourly, vc_RadiationUseEfficiency_hourly, kdf, 0.2, kgpha, style);
+    hPhoto::la_integ_style style = hPhoto::la_integ_style::spitters86_custom;
+    hPhoto::lrc_style lrc = hPhoto::lrc_style::rectangular_hyperbola; // rectangular hyperbola light response curve should have the highest consistency with daily MONICA
+    auto hGp_res = hPhoto::Spitters_canop_photo_3p(solarElevation_rad, vc_LeafAreaIndex, inst_dir_rad, inst_diff_rad, vc_AssimilationRate_hourly, vc_RadiationUseEfficiency_hourly, kdf, 0.2, kgpha, style, lrc);
     hourlyGrossPhoto = hGp_res.A_gross_canop;
-    auto hGpR_res = hPhoto::Spitters_canop_photo_3p(solarElevation_rad, cropPs.pc_ReferenceLeafAreaIndex, inst_dir_rad, inst_diff_rad, vc_AssimilationRateReference_hourly, vc_RadiationUseEfficiencyReference_hourly, kdfRef, 0.2, kgpha, style);
+    auto hGpR_res = hPhoto::Spitters_canop_photo_3p(solarElevation_rad, cropPs.pc_ReferenceLeafAreaIndex, inst_dir_rad, inst_diff_rad, vc_AssimilationRateReference_hourly, vc_RadiationUseEfficiencyReference_hourly, kdfRef, 0.2, kgpha, style, lrc);
     hourlyGrossPhotoRef = hGpR_res.A_gross_canop;
 
     LAI_sl_h = hGp_res.LAI_sl_canop;

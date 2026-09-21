@@ -31,7 +31,7 @@ static_assert(
     "out_unit order must match conversion pipeline"
 );
 
-enum class lrc_style {// light response curve style
+enum class lrc_style {  // light response curve style
   exponential = 0,
   rectangular_hyperbola,
   nonrectangular_hyperbola
@@ -40,6 +40,18 @@ static_assert(
     static_cast<int>(lrc_style::exponential)              == 0 &&
     static_cast<int>(lrc_style::rectangular_hyperbola)    == 1 &&
     static_cast<int>(lrc_style::nonrectangular_hyperbola) == 2,
+    "out_unit order must match conversion pipeline"
+);
+
+enum class la_integ_style{  // leaf angle integration style
+ none = 0,
+ spitters86_custom = 1,
+ sucros87_3pt = 2
+};
+static_assert(
+    static_cast<int>(la_integ_style::none)              == 0 &&
+    static_cast<int>(la_integ_style::spitters86_custom) == 1 &&
+    static_cast<int>(la_integ_style::sucros87_3pt)      == 2,
     "out_unit order must match conversion pipeline"
 );
 
@@ -182,7 +194,6 @@ struct dL_result {
  *                  leaf area index [m2 m-2] * canopy layer depth [0...1, starting from the top]
  * @param I0_dr   direct PAR flux light intensity at the top of the canopy [J m-2 ground s-1] (=direct PAR irradiance on a horizontal plane).
  * @param I0_df   diffuse PAR flux light intensity at the top of the canopy [J m-2 ground s-1] (=diffuse PAR irradiance).
- * 
  * @param A_m     assimilation rate at light saturation [g CO2 m-2 leaf h-1] (=asymptote of light response curve). Temperature-dependent.
  * @param epsilon light-use efficiency [g CO2 J-1 absorbed] (=initial slope of light response curve). Temperature-dependent.
  *                  ARCWHEAT1: "dA/dI at I = 0".
@@ -198,13 +209,17 @@ struct dL_result {
  * @param sigma   scattering coefficient of single leaves and for visible radiation [-]. Default is 0.2.
  *                  See Spitters et al. (1989). In the order of 0.20. 0.20 for spring wheat, maize, potato, sugar beet.
  * @param kgpha   input (A_m, epsilon) and output unit in [kg ha-1] instead of [g m-2]. Default is false.
- * @param leaf_angle_integration_style style of the integration over all leaf angles. Default is 1.
- *                  0 = None (leads to overestimation according to Spitters 1986!);
- *                  1 = Spitters 1986, custom implementation, including Wageningen school implementations-inspired numerical safeguards;
- *                  2 = Spitters 1989, SUCROS87 implementation
+ * @param leaf_angle_integration_style style of the integration over all leaf angles (see hPhoto::la_integ_style). Default is hPhoto::la_integ_style::spitters86_custom.
+ *                  la_integ_style::none              = no leaf angle integration (leads to overestimation according to Spitters 1986!);
+ *                  la_integ_style::spitters86_custom = Spitters 1986, custom implementation, including Wageningen school implementations-inspired numerical safeguards;
+ *                  la_integ_style::sucros87_3pt      = Spitters 1989, SUCROS87 implementation (using 3pt gauss integration over leaf angles)
+ * @param lrc     light response curve style (see hPhoto::lrc_style). Default is hPhoto::lrc_style::exponential.
+ *                  lrc_style::exponential              = function type c*(1-exp(-x/c)), see Spitters 1986;
+ *                  lrc_style::rectangular_hyperbola    = function type (c*x)/(c+x), see Spitters 1986 concise approaches;
+ *                  lrc_style::nonrectangular_hyperbola = not implemented yet! For inspiration, see LICOR method and CO2 gas exchange papers.
  * @return hphoto::dL_result {f_sl, A_sl, A_sh} (fraction sunlit, sunlit & shaded hourly gross photosynthesis of the canopy layer dL [g CO2 m-2 ground h-1]).
  */
-dL_result Spitters_canop_photo_dL(double beta, double L, double I0_dr, double I0_df, double A_m, double epsilon, double k_df=0.6, double sigma=0.2, bool kgpha=false, int leaf_angle_integration_style=1);
+dL_result Spitters_canop_photo_dL(double beta, double L, double I0_dr, double I0_df, double A_m, double epsilon, double k_df=0.6, double sigma=0.2, bool kgpha=false, hPhoto::la_integ_style leaf_angle_integration_style=hPhoto::la_integ_style::spitters86_custom, hPhoto::lrc_style lrc=hPhoto::lrc_style::exponential);
 
 
 struct photo_result{
@@ -243,15 +258,19 @@ struct photo_result{
  * @param sigma   scattering coefficient of single leaves and for visible radiation [-]. Default is 0.2.
  *                  See Spitters et al. (1989). In the order of 0.20. 0.20 for spring wheat, maize, potato, sugar beet.
  * @param kgpha   input (A_m, epsilon) and output unit in [kg ha-1] instead of [g m-2]. Default is false.
- * @param leaf_angle_integration_style style of the integration over all leaf angles. Default is 1.
- *                  0 = None (leads to overestimation according to Spitters 1986!);
- *                  1 = Spitters 1986, custom implementation, including Wageningen school implementations-inspired numerical safeguards;
- *                  2 = Spitters 1989, SUCROS87 implementation
+ * @param leaf_angle_integration_style style of the integration over all leaf angles (see hPhoto::la_integ_style). Default is hPhoto::la_integ_style::spitters86_custom.
+ *                  la_integ_style::none              = no leaf angle integration (leads to overestimation according to Spitters 1986!);
+ *                  la_integ_style::spitters86_custom = Spitters 1986, custom implementation, including Wageningen school implementations-inspired numerical safeguards;
+ *                  la_integ_style::sucros87_3pt      = Spitters 1989, SUCROS87 implementation (using 3pt gauss integration over leaf angles)
+ * @param lrc     light response curve style (see hPhoto::lrc_style). Default is hPhoto::lrc_style::exponential.
+ *                  lrc_style::exponential              = function type c*(1-exp(-x/c)), see Spitters 1986;
+ *                  lrc_style::rectangular_hyperbola    = function type (c*x)/(c+x), see Spitters 1986 concise approaches;
+ *                  lrc_style::nonrectangular_hyperbola = not implemented yet! For inspiration, see LICOR method and CO2 gas exchange papers.
  * @param n_canopy_layers number of canopy layers. Used for midpoint-integrtion over the photosynthesis per layer (non-linear, exponential). Default is 10.
  *                  Usually in the order of 10 to 20 (accuracy/computation time trade-off).
  * @return {A_gross_canop, LAI_sl_canop, f_sl_canop, A_sl_gross_canop, A_sh_gross_canop} (hourly gross photosynthesis of the whole canopy [g CO2 m-2 ground h-1], sunlit LAI, fraction sunlit, sunlit & shaded hourly gross photosynthesis of the whole canopy [g CO2 m-2 ground h-1]).
  */
-photo_result Spitters_canop_photo_multilayer(double beta, double LAI, double I0_dr, double I0_df, double A_m, double epsilon, double k_df=0.6, double sigma=0.2, bool kgpha=false, int leaf_angle_integration_style=1, int n_canopy_layers=10);
+photo_result Spitters_canop_photo_multilayer(double beta, double LAI, double I0_dr, double I0_df, double A_m, double epsilon, double k_df=0.6, double sigma=0.2, bool kgpha=false, hPhoto::la_integ_style leaf_angle_integration_style=hPhoto::la_integ_style::spitters86_custom, hPhoto::lrc_style lrc=hPhoto::lrc_style::exponential, int n_canopy_layers=10);
 
 
 /**
@@ -283,16 +302,17 @@ photo_result Spitters_canop_photo_multilayer(double beta, double LAI, double I0_
  * @param sigma   scattering coefficient of single leaves and for visible radiation [-]. Default is 0.2.
  *                  See Spitters et al. (1989). In the order of 0.20. 0.20 for spring wheat, maize, potato, sugar beet.
  * @param kgpha   input (A_m, epsilon) and output unit in [kg ha-1] instead of [g m-2]. Default is false.
- * @param leaf_angle_integration_style style of the integration over all leaf angles. Default is 1.
- *                   0  = exponential light response curve, no leaf angle integration (leads to overestimation according to Spitters 1986!)
- *                   1  = exponential light response curve, Spitters 1986, custom implementation, including Wageningen school implementations-inspired numerical safeguards
- *                   2  = exponential light response curve, Spitters 1989, SUCROS87 implementation (using 3pt gauss integration over leaf angles)
- *                   10 = rectangular hyperbola light response curve, no leaf angle integration (overestimation should not as bad as with exponential light response curve accoring to Spitters 1986; inspired by style 0)
- *                   11 = rectangular hyperbola light response curve, custom implementation with custom leaf angle integration and numerical safeguards (inspired by style 1)
- *                   12 = rectangular hyperbola light response curve, using 3pt gauss integration over leaf angles (inspired by style 2)
+ * @param leaf_angle_integration_style style of the integration over all leaf angles (see hPhoto::la_integ_style). Default is hPhoto::la_integ_style::spitters86_custom.
+ *                  la_integ_style::none              = no leaf angle integration (leads to overestimation according to Spitters 1986!);
+ *                  la_integ_style::spitters86_custom = Spitters 1986, custom implementation, including Wageningen school implementations-inspired numerical safeguards;
+ *                  la_integ_style::sucros87_3pt      = Spitters 1989, SUCROS87 implementation (using 3pt gauss integration over leaf angles)
+ * @param lrc     light response curve style (see hPhoto::lrc_style). Default is hPhoto::lrc_style::exponential.
+ *                  lrc_style::exponential              = function type c*(1-exp(-x/c)), see Spitters 1986;
+ *                  lrc_style::rectangular_hyperbola    = function type (c*x)/(c+x), see Spitters 1986 concise approaches;
+ *                  lrc_style::nonrectangular_hyperbola = not implemented yet! For inspiration, see LICOR method and CO2 gas exchange papers.
  * @return {A_gross_canop, LAI_sl_canop, f_sl_canop, A_sl_gross_canop, A_sh_gross_canop} (hourly gross photosynthesis of the whole canopy [g CO2 m-2 ground h-1], sunlit LAI, fraction sunlit, sunlit & shaded hourly gross photosynthesis of the whole canopy [g CO2 m-2 ground h-1]).
  */
-photo_result Spitters_canop_photo_3p(double beta, double LAI, double I0_dr, double I0_df, double A_m, double epsilon, double k_df=0.6, double sigma=0.2, bool kgpha=false, int leaf_angle_integration_style=1);
+photo_result Spitters_canop_photo_3p(double beta, double LAI, double I0_dr, double I0_df, double A_m, double epsilon, double k_df=0.6, double sigma=0.2, bool kgpha=false, hPhoto::la_integ_style leaf_angle_integration_style=hPhoto::la_integ_style::spitters86_custom, hPhoto::lrc_style lrc=hPhoto::lrc_style::exponential);
 
 
 struct Spitters_canop_radiation_dL_result {
@@ -333,7 +353,7 @@ Spitters_canop_radiation_dL_result Spitters_canop_radiation_dL(double beta, doub
  * @param epsilon_sh light-use efficiency [g CO2 J-1 absorbed] (=initial slope of light response curve). Temperature-dependent.
  *                     ARCWHEAT1: "dA/dI at I = 0".
  *                     MONICA: "transition between photosynthetic quantum use efficiency and light saturated photosynthesis".
- * @param lrc        light response curve style
+ * @param lrc     light response curve style (see hPhoto::lrc_style). Default is hPhoto::lrc_style::exponential.
  * @return assimilation from shaded leaves for the canopy layer
  */
 double Spitters_A_sh_dL(double Ia_sh, double Amax_sh, double epsilon_sh, hPhoto::lrc_style lrc=hPhoto::lrc_style::exponential);
@@ -349,7 +369,10 @@ double Spitters_A_sh_dL(double Ia_sh, double Amax_sh, double epsilon_sh, hPhoto:
  *                     ARCWHEAT1: "dA/dI at I = 0".
  *                     MONICA: "transition between photosynthetic quantum use efficiency and light saturated photosynthesis".
  * @param kgpha      input (A_m, epsilon) and output unit in [kg ha-1] instead of [g m-2]. Default is false.
- * @param lrc        light response curve style
+ * @param lrc        light response curve style (see hPhoto::lrc_style). Default is hPhoto::lrc_style::exponential.
+ *                     lrc_style::exponential              = function type c*(1-exp(-x/c)), see Spitters 1986;
+ *                     lrc_style::rectangular_hyperbola    = function type (c*x)/(c+x), see Spitters 1986 concise approaches;
+ *                     lrc_style::nonrectangular_hyperbola = not implemented yet! For inspiration, see LICOR method and CO2 gas exchange papers.
  * @return assimilation from sunlit leaves for the canopy layer 
  */
 double Spitters_A_sl_dL(double A_sh, double Ia_sldr, double Amax_sl, double epsilon_sl, bool kgpha, hPhoto::lrc_style lrc=hPhoto::lrc_style::exponential);

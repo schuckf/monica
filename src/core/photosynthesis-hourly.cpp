@@ -150,7 +150,7 @@ hPhoto::PAR_radiation_result hPhoto::PAR_radiation(double global_rad, double ext
 }
 
 
-dL_result hPhoto::Spitters_canop_photo_dL(double beta, double L, double I0_dr, double I0_df, double A_m, double epsilon, double k_df, double sigma, bool kgpha, int leaf_angle_integration_style)
+dL_result hPhoto::Spitters_canop_photo_dL(double beta, double L, double I0_dr, double I0_df, double A_m, double epsilon, double k_df, double sigma, bool kgpha, hPhoto::la_integ_style leaf_angle_integration_style, hPhoto::lrc_style lrc)
 {
   assert(L > 0.);
   assert(epsilon > 0.);
@@ -211,31 +211,40 @@ dL_result hPhoto::Spitters_canop_photo_dL(double beta, double L, double I0_dr, d
 
   assert(A_m > 0.); // this should usually be true, since MONICA does something like this: A_m = max(0.1, A_m);
   double A_sh = 0.;
-  if (leaf_angle_integration_style >= 10) {
+  // if (leaf_angle_integration_style >= 10) {
+  if (lrc == hPhoto::lrc_style::rectangular_hyperbola) {
     // eq. 24
     A_sh = A_m * (epsilon * Ia_sh / (epsilon * Ia_sh + A_m)); // rectangular hyperbola function light respone curve
-  } else {
+  } else if (lrc == hPhoto::lrc_style::exponential) {
     // eq. 15
     A_sh = A_m * (1. - exp(-epsilon * Ia_sh / A_m));         // negative exponential function with negative exponent light response curve
     // A_sh = (A_m < eps) ? 0. : A_m * (1. - exp(-epsilon * Ia_sh / A_m));  // added safeguard for A_m, since MONICA has this: if (vw_MeanAirTemperature < pc_MinimumTemperatureForAssimilation) {vc_AssimilationRate = 0.0;}
+  } else if (lrc == hPhoto::lrc_style::nonrectangular_hyperbola) {
+    throw runtime_error("Light response curve style nonrectangular_hyperbola not implemented");
+  } else {
+    throw runtime_error("Invalid light response curve style!");
   }
 
   double A_sl = 0.;
-  if ((leaf_angle_integration_style == 0) || (leaf_angle_integration_style == 10)) {  // None
+  if (leaf_angle_integration_style == hPhoto::la_integ_style::none) {  // None
     // sunlit leaf area
     // eq. 14
     double Ia_sl = (sinbeta <= hPhoto::eps) ? Ia_sh : Ia_sh + (1. - sigma) * k_bl * I0_dr;         // absorbed light energy sunlit leaf area (receives diffuse and direct radiation) [J m-2 leaf s-1], added safeguard
-    if (leaf_angle_integration_style == 10) {
-      A_sl = A_m * (epsilon * Ia_sl / (epsilon * Ia_sl + A_m)); // None, but with rectangular hyperbola function
-    } else {
+    if (lrc == hPhoto::lrc_style::exponential) { // (leaf_angle_integration_style == 10) {
       A_sl = A_m * (1. - exp(-epsilon * Ia_sl / A_m));          // inaccurate; leads to overestimation according to Spitters 1986 // FS: Averaging Ia_sl is inaccurate, because photosynthesis light response is not linear!
-    }
+    } else {  // else if (lrc == hPhoto::lrc_style::rectangular_hyperbola) {
+      A_sl = A_m * (epsilon * Ia_sl / (epsilon * Ia_sl + A_m)); // None, but with rectangular hyperbola function
+    } // else if (lrc == hPhoto::lrc_style::nonrectangular_hyperbola) {
+    //   throw runtime_error("Light response curve style nonrectangular_hyperbola not implemented");
+    // } else {
+    //   throw runtime_error("Invalid light response curve style!");
+    // }
   } else {
     // correction to account for the variation in leaf angle and thus in illumination intensity for sunlit leaf area
     // FS: This is crucial, since photosynthesis is not linear. It is not sufficient to average irradiances over leaf angles beforehand - instead, photosynthesis should be averaged by integrating over leaf angles.
     // eq. 16, eq. 17
     double Ia_sldr = (sinbeta <= hPhoto::eps) ? 0.0 : (1. - sigma) * I0_dr / sinbeta;  // direct flux is absorbed by a leaf perpendicular to the direct beam, safeguard added
-    if (leaf_angle_integration_style == 1) {          // Spitters 1986, custom implementation including Wageningen school implementations-inspired numerical safeguards;
+    if (leaf_angle_integration_style == hPhoto::la_integ_style::spitters86_custom) {          // Spitters 1986, custom implementation including Wageningen school implementations-inspired numerical safeguards;
       const double A_m_nsmin = kgpha ? 2.0 : 0.2; // 0.2 [g CO2 m-2 leaf h-1] or 2 [kg CO2 ha-1 leaf h-1]; Wageningen school-style numerical safeguard;
                                                   // see e.g. WOFOST (https://github.com/ajwdewit/WOFOST/blob/deac197d3c74741832b815581699a6c825894758/sources/w60lib/assim.for)
                                                   // or python crop smulation environment (pcse = WOFOST pure python implementation, https://github.com/ajwdewit/pcse/blob/4d9f0e4f542e9062db338aaf1a227a75f1b03949/pcse/crop/assimilation.py),
@@ -243,35 +252,36 @@ dL_result hPhoto::Spitters_canop_photo_dL(double beta, double L, double I0_dr, d
       if (Ia_sldr <= hPhoto::eps) {
         A_sl = A_sh;  // this is the limit of eq. 17 when Ia_sldr -> 0
       } else {
-        // eq. 17
-        A_sl = A_m * (1. - (A_m - A_sh) * (1. - exp(-epsilon * Ia_sldr / max(A_m_nsmin, A_m))) / (epsilon * Ia_sldr));  // corrected version of A_sl, integrating over leaf angles (assuming spherical distribution)
-      }
-    } else if (leaf_angle_integration_style == 2) { // SUCROS87 Subroutine ASS (Spitters et al. 1989) integration over leaf angle distribution
-      static const double gaussian_distances[3] = {0.112702, 0.5, 0.887298};
-      static const double gaussian_weights[3] = {0.277778, 0.444444, 0.277778};
-      //selection of canopy depths (LAIC from top)
-      for (int i = 0; i < 3; ++i) {
-        double Ia_sl = Ia_sh + Ia_sldr * gaussian_distances[i];
-        // 3-point gaussian integration
-        A_sl += A_m * (1. - exp(-epsilon * Ia_sl / A_m)) * gaussian_weights[i];
-      }
-    } else if (leaf_angle_integration_style == 11) { // SUCROS87 Subroutine ASS (Spitters et al. 1989) integration over leaf angle distribution
-      const double A_m_nsmin = kgpha ? 2.0 : 0.2;
-      if (Ia_sldr <= hPhoto::eps) {
-        A_sl = A_sh;  // this is the limit of eq. 17 when Ia_sldr -> 0
-      } else {
-        // A_sl = A_m * (1. - (A_m / (epsilon * Ia_sldr)) * log1p((epsilon * Ia_sldr * (A_m - A_sh)) / (A_m * A_m)));                               // integrating rectangular hyperbola over leaf angles (assuming spherical distribution),
-                                                                                                                                                    // in a similar way as done in eq.17 for the exponential light response curve
+        if (lrc == hPhoto::lrc_style::exponential) {
+          // eq. 17
+          A_sl = A_m * (1. - (A_m - A_sh) * (1. - exp(-epsilon * Ia_sldr / max(A_m_nsmin, A_m))) / (epsilon * Ia_sldr));  // corrected version of A_sl, integrating over leaf angles (assuming spherical distribution)
+        } else {  // else if (lrc == hPhoto::lrc_style::rectangular_hyperbola) {
+        // integration over leaf angle distribution, but with rectengular hyperbola
+        // A_sl = A_m * (1. - (A_m / (epsilon * Ia_sldr)) * log1p((epsilon * Ia_sldr * (A_m - A_sh)) / (A_m * A_m)));     // integrating rectangular hyperbola over leaf angles (assuming spherical distribution),
+                                                                                                                          // in a similar way as done in eq.17 for the exponential light response curve
         A_sl = A_m * (1. - (max(A_m_nsmin, A_m) / (epsilon * Ia_sldr)) * log1p((epsilon * Ia_sldr * (A_m - A_sh)) / (A_m * max(A_m_nsmin, A_m))));  // added numerical safeguard
+        } // else if (lrc == hPhoto::lrc_style::nonrectangular_hyperbola) {
+        //   throw runtime_error("Light response curve style nonrectangular_hyperbola not implemented");
+        // } else {
+        //   throw runtime_error("Invalid light response curve style!");
+        // }
       }
-    } else if (leaf_angle_integration_style == 12) { // integration over leaf angle distribution, but with rectengular hyperbola
+    } else if (leaf_angle_integration_style == hPhoto::la_integ_style::sucros87_3pt) { // SUCROS87 Subroutine ASS (Spitters et al. 1989) integration over leaf angle distribution
       static const double gaussian_distances[3] = {0.112702, 0.5, 0.887298};
       static const double gaussian_weights[3] = {0.277778, 0.444444, 0.277778};
       //selection of canopy depths (LAIC from top)
       for (int i = 0; i < 3; ++i) {
         double Ia_sl = Ia_sh + Ia_sldr * gaussian_distances[i];
         // 3-point gaussian integration
-        A_sl += A_m * (epsilon * Ia_sl / (epsilon * Ia_sl + A_m)) * gaussian_weights[i];
+        if (lrc == hPhoto::lrc_style::exponential) {
+          A_sl += A_m * (1. - exp(-epsilon * Ia_sl / A_m)) * gaussian_weights[i];
+        } else {  // if (lrc == hPhoto::lrc_style::rectangular_hyperbola) {
+          A_sl += A_m * (epsilon * Ia_sl / (epsilon * Ia_sl + A_m)) * gaussian_weights[i];
+        } // else if (lrc == hPhoto::lrc_style::nonrectangular_hyperbola) {
+        //   throw runtime_error("Light response curve style nonrectangular_hyperbola not implemented");
+        // } else {
+        //   throw runtime_error("Invalid light response curve style!");
+        // }
       }
     } else {
       throw runtime_error("Incvalid leaf_angle_integration_style!");
@@ -295,7 +305,8 @@ dL_result hPhoto::Spitters_canop_photo_dL(double beta, double L, double I0_dr, d
 }
 
 
-photo_result hPhoto::Spitters_canop_photo_multilayer(double beta, double LAI, double I0_dr, double I0_df, double A_m, double epsilon, double k_df, double sigma, bool kgpha, int leaf_angle_integration_style, int n_canopy_layers) {
+photo_result hPhoto::Spitters_canop_photo_multilayer(double beta, double LAI, double I0_dr, double I0_df, double A_m, double epsilon, double k_df, double sigma, bool kgpha, hPhoto::la_integ_style leaf_angle_integration_style, hPhoto::lrc_style lrc, int n_canopy_layers)
+{
   assert(n_canopy_layers > 0);
 
   if (LAI <= 0.0) {
@@ -315,7 +326,7 @@ photo_result hPhoto::Spitters_canop_photo_multilayer(double beta, double LAI, do
 
     // photosynthesis of canopy layer dL
     // auto A = Spitters_canop_photo_dL(beta, L, I0_dr, I0_df, A_m, epsilon, k_df, sigma, kgpha, leaf_angle_integration_style);
-    auto dL_res = Spitters_canop_photo_dL(beta, L, I0_dr, I0_df, A_m, epsilon, k_df, sigma, kgpha, leaf_angle_integration_style);
+    auto dL_res = Spitters_canop_photo_dL(beta, L, I0_dr, I0_df, A_m, epsilon, k_df, sigma, kgpha, leaf_angle_integration_style, lrc);
 
     // eq. 18
     double A = dL_res.f_sl * dL_res.A_sl + (1. - dL_res.f_sl) * dL_res.A_sh;
@@ -333,7 +344,8 @@ photo_result hPhoto::Spitters_canop_photo_multilayer(double beta, double LAI, do
   return {A_canop * LAI, LAI_sl_canop, f_sl_canop, A_sl_canop * LAI_sl_canop, A_sh_canop * (LAI - LAI_sl_canop)};
 }
 
-photo_result hPhoto::Spitters_canop_photo_3p(double beta, double LAI, double I0_dr, double I0_df, double A_m, double epsilon, double k_df, double sigma, bool kgpha, int leaf_angle_integration_style) {
+photo_result hPhoto::Spitters_canop_photo_3p(double beta, double LAI, double I0_dr, double I0_df, double A_m, double epsilon, double k_df, double sigma, bool kgpha, hPhoto::la_integ_style leaf_angle_integration_style, hPhoto::lrc_style lrc)
+{
   if (LAI <= 0.0) {
     // return 0.0;
     return {0.0, 0.0, 0.0, 0.0, 0.0};
@@ -356,7 +368,7 @@ photo_result hPhoto::Spitters_canop_photo_3p(double beta, double LAI, double I0_
 
     // photosynthesis of canopy layer at gaussian integration point l
     // A = Spitters_canop_photo_dL(beta, L, I0_dr, I0_df, A_m, epsilon, k_df, sigma, kgpha, leaf_angle_integration_style);
-    auto dL_res = Spitters_canop_photo_dL(beta, L, I0_dr, I0_df, A_m, epsilon, k_df, sigma, kgpha, leaf_angle_integration_style);
+    auto dL_res = Spitters_canop_photo_dL(beta, L, I0_dr, I0_df, A_m, epsilon, k_df, sigma, kgpha, leaf_angle_integration_style, lrc);
 
     // eq. 18
     double A = dL_res.f_sl * dL_res.A_sl + (1. - dL_res.f_sl) * dL_res.A_sh;
