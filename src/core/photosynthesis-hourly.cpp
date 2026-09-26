@@ -383,7 +383,7 @@ photo_result hPhoto::Spitters_canop_photo_3p(double beta, double LAI, double I0_
   double LAI_sl_canop = f_sl_canop * LAI;
 
   // return A_canop * LAI;
-  return {A_canop * LAI, LAI_sl_canop, f_sl_canop, A_sl_canop * LAI_sl_canop, A_sh_canop * (LAI - LAI_sl_canop)};
+  return {A_canop * LAI, LAI_sl_canop, f_sl_canop, A_sl_canop * LAI, A_sh_canop * LAI};
 }
 
 
