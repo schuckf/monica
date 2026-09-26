@@ -341,7 +341,7 @@ photo_result hPhoto::Spitters_canop_photo_multilayer(double beta, double LAI, do
   double LAI_sl_canop = f_sl_canop * LAI;
 
   // return A_canop * LAI;
-  return {A_canop * LAI, LAI_sl_canop, f_sl_canop, A_sl_canop * LAI_sl_canop, A_sh_canop * (LAI - LAI_sl_canop)};
+  return {A_canop * LAI, LAI_sl_canop, f_sl_canop, A_sl_canop * LAI, A_sh_canop * LAI};
 }
 
 photo_result hPhoto::Spitters_canop_photo_3p(double beta, double LAI, double I0_dr, double I0_df, double A_m, double epsilon, double k_df, double sigma, bool kgpha, hPhoto::la_integ_style leaf_angle_integration_style, hPhoto::lrc_style lrc)

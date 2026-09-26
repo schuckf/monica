@@ -1235,42 +1235,82 @@ void CropModule::step(double vw_MeanAirTemperature,
         */
 
         // leaf temperature
-        double globRad_Wpm2ps{0.0};
-        if (cropPs.__enable_leaf_temperature__ && _noOfHourlySteps_Devstage_gt_0 > 0) {                                                 // FS: using a simple canopy temperature implementation
-          globRad_Wpm2ps = (inst_diff_rad + inst_dir_rad) / 3600;  // hPhoto::convert_MJpm2ps_to_unit(hp_in.globalRad, hPhoto::unit::Wpm2ps); // @ToDo FS: for Agri-PV, use reduced radiation here
-          double Ta_K = hourlyAirT.at(h) + Voc::D_IN_K;
-          // vc_VapourPressure_h, vc_SaturatedVapourPressure_h and vc_SaturatedVapourPressureSlope_h for the previous time step are calculated in CropModule::fc_ReferenceEvapotranspiration_h(...)
+        cerr << "-----\n" << currentDate.toString() << ": h=" << h << "\n-----" << std::endl;         // FS DEBUG LAI
+        double globRad_Wpm2{0.0};
+        if (cropPs.__enable_leaf_temperature__ && _noOfHourlySteps_Devstage_gt_0 > 0) {
+          // throw runtime_error("Leaf or canopy temperature not implemented yet");
+          // FS: attempt to use a simple canopy temperature implementation
+          globRad_Wpm2 = (inst_diff_rad + inst_dir_rad) / 3600;  // hPhoto::convert_MJpm2ps_to_unit(hp_in.globalRad, hPhoto::unit::Wpm2ps); // @ToDo FS: for Agri-PV, use reduced radiation here
 
-          cerr << "-----\n" << currentDate.toString() << ": h=" << h << "\n-----" << std::endl;         // FS DEBUG LAI
-          cerr << "globRad_Wpm2ps=" << globRad_Wpm2ps << std::endl;
-          assert(std::isfinite(globRad_Wpm2ps)); // FS DEBUG LAI
-          cerr << "vc_crop_AerodynamicResistance_h=" << vc_crop_AerodynamicResistance_h << std::endl;
-          assert(std::isfinite(vc_crop_AerodynamicResistance_h)); // FS DEBUG LAI
-          cerr << "vc_crop_StomataResistance_h=" << vc_crop_StomataResistance_h << std::endl;
-          assert(std::isfinite(vc_crop_StomataResistance_h)); // FS DEBUG LAI
-          cerr << "vc_crop_SurfaceResistance_h=" << vc_crop_SurfaceResistance_h << std::endl;
-          assert(std::isfinite(vc_crop_SurfaceResistance_h)); // FS DEBUG LAI
-          cerr << "vc_VapourPressure_h=" << vc_VapourPressure_h << std::endl;
-          assert(std::isfinite(vc_VapourPressure_h)); // FS DEBUG LAI
-          cerr << "vc_SaturatedVapourPressure_h=" << vc_SaturatedVapourPressure_h << std::endl;
-          assert(std::isfinite(vc_SaturatedVapourPressure_h)); // FS DEBUG LAI
-          cerr << "vc_SaturatedVapourPressureSlope_h=" << vc_SaturatedVapourPressureSlope_h << std::endl;
-          assert(std::isfinite(vc_SaturatedVapourPressureSlope_h)); // FS DEBUG LAI
-          cerr << "vc_PsycrometerConstant=" << vc_PsycrometerConstant << std::endl;
-          assert(std::isfinite(vc_PsycrometerConstant)); // FS DEBUG LAI
-          cerr << "Ta_K - Voc::D_IN_K=" << Ta_K - Voc::D_IN_K << std::endl;
-          assert(std::isfinite(Ta_K - Voc::D_IN_K)); // FS DEBUG LAI
-
-          double Tc_K = canopTemperature(globRad_Wpm2ps, Ta_K,
-                                         vc_crop_AerodynamicResistance_h, vc_crop_SurfaceResistance_h,
-                                         vc_VapourPressure_h, vc_SaturatedVapourPressure_h, vc_SaturatedVapourPressureSlope_h,
-                                         vc_PsycrometerConstant);
-          double Tc_C = Tc_K - Voc::D_IN_K;
+          double dTg = (globRad_Wpm2 <= 0.) ? -1.0 : ((globRad_Wpm2 < 200.0) ? 1.0 : 2.0);
+          double le = (pc_CarboxylationPathway == 1) ? 7.0 : 3.5;
+          double a = (pc_CarboxylationPathway == 1) ? 0.4 : 0.2;
+          double dTt = ((vc_GrossCO2Assimilation_h_pre * vc_TranspirationDeficit_h * 1e-4 * le) < (a * globRad_Wpm2)) ? 3.0 : 0.0;
+          double Tc_C = hourlyAirT.at(h) + dTg + dTt;
           hp_in.leafT = Tc_C;
+
+          // FS DEBUG LAI
+          // // ### BROKEN - very rough estimation of canopy temperature
+          // double vc_AtmosphericPressure = 101.3 * pow(((293.0 - (0.0065 * vs_HeightNN)) / 293.0), 5.26); // [kPa]
+          // double Ta_K = hourlyAirT.at(h) + Voc::D_IN_K;
+          // const double StefanBoltzmanConstant = 5.67e-8;  // Stefan-Boltzmann constant [W m-2 K-4]    = 2.043 10-10 [MJ m-2 K-4 hour-1] / 3600 [seconds] = hourly FAO-56 version / 3600; (this is the Stefan-Boltzmann constant, not to be confused with the Boltzmann constant!)
+          // const double epsi = 0.95;                       // leaf emmesivity
+          // const double la_sw = 0.66;                      // leaf absorptance shortwave
+          // const double la_lw = 0.95;                      // leaf absorptance longwave
+          // double Te_K = 1.06 * Ta_K - 21;                                                   // effective sky temperature (for long-wave), Yu et al. eq.10
+          // double rho_air = 1e3 * vc_AtmosphericPressure / (287.1 * Ta_K);                   // air density [kg m-3],  using ideal gas law and specific gas constant for dry air
+          // double Cp_air = 1005.;                                                            // specific heat of air under constant pressure [J kg-1 K-1]
+          
+          // double le = (pc_CarboxylationPathway == 1) ? 7.0 : 3.5;
+          
+          // double Ri = la_sw * globRad_Wpm2;
+          // // neglecting + la_lw * StefanBoltzmanConstant * pow(Te_K, 4)
+
+          // double H = Ri - epsi * StefanBoltzmanConstant * pow(Ta_K + dT_pre, 4) - max(0., vc_GrossCO2Assimilation_h_pre * vc_TranspirationDeficit_h * 1e-4 * le);  // sensible heat [W m-2]
+          // double dT_estim = H * vc_crop_AerodynamicResistance_h / (rho_air * Cp_air);
+          // cerr << "dT_estim=" << dT_estim << std::endl;
+          // double Tc_C = hourlyAirT.at(h) + dT_estim;
+          // // double dT = (globRad_Wpm2 > 0.) ? dT_estim : -0.5;
+          // // double Tc_C = hourlyAirT.at(h) + dT;
+          // dT_pre = dT_estim;
+          // // ###
+
+          // FS: this has to be solved iteratively until there is nearly an equilibrium between energy loss and gain (e.g. +/-5 W m-2)
+
+          // double Ta_K = hourlyAirT.at(h) + Voc::D_IN_K;
+          // // vc_VapourPressure_h, vc_SaturatedVapourPressure_h and vc_SaturatedVapourPressureSlope_h for the previous time step are calculated in CropModule::fc_ReferenceEvapotranspiration_h(...)
+    
+          // cerr << "globRad_Wpm2=" << globRad_Wpm2 << std::endl;                                         // FS DEBUG LAI
+          // assert(std::isfinite(globRad_Wpm2)); // FS DEBUG LAI
+          // cerr << "vc_crop_AerodynamicResistance_h=" << vc_crop_AerodynamicResistance_h << std::endl;
+          // assert(std::isfinite(vc_crop_AerodynamicResistance_h)); // FS DEBUG LAI
+          // cerr << "vc_crop_StomataResistance_h=" << vc_crop_StomataResistance_h << std::endl;
+          // assert(std::isfinite(vc_crop_StomataResistance_h)); // FS DEBUG LAI
+          // cerr << "vc_crop_SurfaceResistance_h=" << vc_crop_SurfaceResistance_h << std::endl;
+          // assert(std::isfinite(vc_crop_SurfaceResistance_h)); // FS DEBUG LAI
+          // cerr << "vc_VapourPressure_h=" << vc_VapourPressure_h << std::endl;
+          // assert(std::isfinite(vc_VapourPressure_h)); // FS DEBUG LAI
+          // cerr << "vc_SaturatedVapourPressure_h=" << vc_SaturatedVapourPressure_h << std::endl;
+          // assert(std::isfinite(vc_SaturatedVapourPressure_h)); // FS DEBUG LAI
+          // cerr << "vc_SaturatedVapourPressureSlope_h=" << vc_SaturatedVapourPressureSlope_h << std::endl;
+          // assert(std::isfinite(vc_SaturatedVapourPressureSlope_h)); // FS DEBUG LAI
+          // cerr << "vc_PsycrometerConstant=" << vc_PsycrometerConstant << std::endl;
+          // assert(std::isfinite(vc_PsycrometerConstant)); // FS DEBUG LAI
+          // cerr << "Ta_K - Voc::D_IN_K=" << Ta_K - Voc::D_IN_K << std::endl;
+          // assert(std::isfinite(Ta_K - Voc::D_IN_K)); // FS DEBUG LAI
+
+          // double Tc_K = canopTemperature(globRad_Wpm2, Ta_K,
+          //                                vc_crop_AerodynamicResistance_h, vc_crop_SurfaceResistance_h,
+          //                                vc_VapourPressure_h, vc_SaturatedVapourPressure_h, vc_SaturatedVapourPressureSlope_h,
+          //                                vc_PsycrometerConstant);
+          // double Tc_C = Tc_K - Voc::D_IN_K;
+
+          // hp_in.leafT = Tc_C;
           // hp_in.leafT = f_sl_prev * Tc_C + (1. - f_sl_prev) * hourlyAirT.at(h);   // attempt weighted mean sunlit leaves & air temperature (as approx. for shaded)
 
 
           // FS DEBUG LAI
+          cerr << "Ta_C=" << hourlyAirT.at(h) << std::endl;
           cerr << "Tc_C=" << Tc_C << std::endl;
           assert(std::isfinite(Tc_C)); // FS DEBUG LAI
 
@@ -1286,17 +1326,20 @@ void CropModule::step(double vw_MeanAirTemperature,
         // assert(std::isfinite(hourlyAirT.at(h))); // FS DEBUG LAI
         // cerr << "hp_in.leafT=" << hp_in.leafT << std::endl;
         // assert(std::isfinite(hp_in.leafT)); // FS DEBUG LAI
-        // cerr << "globRad_Wpm2ps=" << globRad_Wpm2ps << std::endl;
+        // cerr << "globRad_Wpm2=" << globRad_Wpm2 << std::endl;
 
 
 
         // gross photosynthesis
+        cerr << "hp_in.globalRad=" << hp_in.globalRad << endl;                                        // FS DEBUG LAI
+        inst_diff_rad *= parfrac;
+        inst_dir_rad *= parfrac;
         auto [vc_GrossCO2Assimilation_h,
               vc_GrossCO2AssimilationReference_h,
               KTkc,
               LAI_sl_h,
-              vc_GrossCO2Assimilation_sl_h] = fc_CropGrossPhotosynthesis_h(inst_diff_rad * parfrac,
-                                                                           inst_dir_rad * parfrac,
+              vc_GrossCO2Assimilation_sl_h] = fc_CropGrossPhotosynthesis_h(inst_diff_rad,
+                                                                           inst_dir_rad,
                                                                            hp_in.solarEl,
                                                                            hp_in.leafT,
                                                                            vw_AtmosphericCO2Concentration);  // ,
@@ -1305,6 +1348,8 @@ void CropModule::step(double vw_MeanAirTemperature,
         hourly_KTkc_day.push_back(KTkc);
 
         // FS DEBUG LAI
+        vc_GrossCO2Assimilation_h_pre = vc_GrossCO2Assimilation_h;
+        cerr << "vc_GrossCO2Assimilation_h_pre=" << vc_GrossCO2Assimilation_h_pre << std::endl;
         // cerr << "vc_GrossCO2Assimilation_h=" << vc_GrossCO2Assimilation_h << std::endl
         //      << "vc_GrossCO2AssimilationReference_h=" << vc_GrossCO2AssimilationReference_h << std::endl
         //      << "vc_LeafAreaIndex=" << vc_LeafAreaIndex << std::endl
@@ -1332,18 +1377,13 @@ void CropModule::step(double vw_MeanAirTemperature,
             << endl;
         }
 
-        // Calculation of photosynthesis rate from [kg CO2 ha-1 d-1] to [kg CH2O ha-1 d-1]
+        // Calculation of photosynthesis rate from [kg CO2 ha-1 h-1] to [kg CH2O ha-1 h-1]
         double vc_GrossPhotosynthesis_h = vc_GrossCO2Assimilation_h * 30.0 / 44.0;
-
-        // // Calculation of photosynthesis rate from [kg CO2 ha-1 d-1]  to [mol m-2 s-1] or [cm3 cm-2 s-1]
-        // double vc_GrossPhotosynthesis_mol_h = vc_GrossCO2Assimilation_h * 22414.0 / (10.0 * 3600.0 * 24.0 * 44.0);
-        // double vc_GrossPhotosynthesisReference_mol_h = vc_GrossCO2AssimilationReference_h * 22414.0 / (10.0 * 3600.0 * 24.0 * 44.0);
 
         // Calculation of photosynthesis rate from [kg CO2 ha-1 h-1]  to [mol m-2 s-1] or [cm3 cm-2 s-1]
         double vc_GrossPhotosynthesis_mol_h = vc_GrossCO2Assimilation_h * 22414.0 / (10.0 * 3600.0 * 44.0);
         double vc_GrossPhotosynthesisReference_mol_h = vc_GrossCO2AssimilationReference_h * 22414.0 / (10.0 * 3600.0 * 44.0);
 
-        // // Converting photosynthesis rate from [kg CO2 ha leaf-1 d-1] to [kg CH2O ha-1  d-1]
         // Converting photosynthesis rate from [kg CO2 ha leaf-1 h-1] to [kg CH2O ha-1 h-1]
         double vc_Assimilates_h = vc_GrossCO2Assimilation_h * 30.0 / 44.0;
 
@@ -1353,7 +1393,8 @@ void CropModule::step(double vw_MeanAirTemperature,
         // [TRANSPLANT SHOCK] Photosynthesis Limitation.
         // Reduces the daily gross CO2 assimilation rate according to the shock recovery efficiency factor.
         if (vc_TransplantEfficiency < 1.0) {
-          vc_GrossCO2Assimilation *= vc_TransplantEfficiency; // FS: this is a daily factor, updated at the start of CropModule::step(...)
+          // vc_GrossCO2Assimilation_h *= vc_TransplantEfficiency;  // FS: this used to be applied before the Calculation of photosynthesis rate from [kg CO2 ha-1 d-1] to [kg CH2O ha-1 d-1]
+          vc_Assimilates_h *= vc_TransplantEfficiency;              // FS: vc_TransplantEfficiency is a daily factor, updated at the start of CropModule::step(...)
         }
 
         // reduction value for assimilate amount to simulate field conditions;
@@ -3702,12 +3743,12 @@ CropModule::crop_r CropModule::crop_aerodyn_stomata_surface_resistances(double v
   cerr << "-> A_gross_mol=" << A_gross_mol << std::endl;
 
   double crop_StomataResistance = 200.;                                                                      
-  if (A_gross_mol < 0.1) {
-    crop_StomataResistance = 2.;  // [s m-1]   // FS: check what leads to a realistic leaf energy balance here: maybe 10000? or 5000? or 2000 or ...?
+  if (A_gross_mol < 1e-9) {
+    crop_StomataResistance = 2.0; // [s m-1]   // FS: check what leads to a realistic leaf energy balance here: maybe 10000? or 5000? or 2000 or ...?
     cerr << " ->noph: crop_StomataResistance=" << crop_StomataResistance << std::endl;    // FS DEBUG LAI
   } else {
     // double crop_StomataResistance = (vw_AtmosphericCO2Concentration * (1.0 + vc_SaturationDeficit / pc_SaturationBeta)) / (pc_StomataConductanceAlpha * A_gross_mol);  // [s m-1]
-    double crop_StomataResistance = 20. * (1e-6*vw_AtmosphericCO2Concentration * (1.0 + vc_SaturationDeficit / 1.5)) / (A_gross_mol);  // [s m-1]
+    crop_StomataResistance = 20.0 * (1e-6*vw_AtmosphericCO2Concentration * (1.0 + vc_SaturationDeficit / 1.5)) / (A_gross_mol); // [s m-1]
     cerr << " ->calc: crop_StomataResistance=" << crop_StomataResistance << std::endl;    // FS DEBUG LAI
     assert(std::isfinite(crop_StomataResistance));
   }
@@ -3725,7 +3766,7 @@ CropModule::crop_r CropModule::crop_aerodyn_stomata_surface_resistances(double v
  * - Yu, O., Goudriaan, J., & Wang, T. (2001). Modelling Diurnal Courses of Photosynthesis and Transpiration of Leaves on the Basis of Stomatal and Non-Stomatal Responses, Including Photoinhibition. Photosynthetica, 39(1), 43-51. https://doi.org/10.1023/A:1012435717205
  * - Paw U, K. T. (1987). Mathematical analysis of the operative temperature and energy budget. Journal of Thermal Biology, 12(3), 227-233. https://doi.org/10.1016/0306-4565(87)90009-X
  * 
- * @param globalRad_Wpm2ps                global irradiance [W m-2]
+ * @param globalRad_Wpm2                  global irradiance [W m-2]
  * @param Ta_K                            air temperature [K]
  * @param crop_AerodynamicResistance      [s m-1]
  * @param crop_StomataResistance          [s m-1]
@@ -3736,7 +3777,7 @@ CropModule::crop_r CropModule::crop_aerodyn_stomata_surface_resistances(double v
  * @param vc_PsycrometerConstant
  * @return double canopy temperature [K]
  */
-double CropModule::canopTemperature(double globalRad_Wpm2ps,
+double CropModule::canopTemperature(double globalRad_Wpm2,
                                     double Ta_K,
                                     double crop_AerodynamicResistance,
                                     double crop_StomataResistance,
@@ -3752,11 +3793,11 @@ double CropModule::canopTemperature(double globalRad_Wpm2ps,
   double Te_K = 1.06 * Ta_K - 21;                                                         // effective sky temperature (for long-wave), Yu et al. eq.10
   double rho_air = 1e3 * vc_AtmosphericPressure / (287.1 * Ta_K);                         // air density [kg m-3],  using ideal gas law and specific gas constant for dry air
   double Cp_air = 1005.;                                                                  // specific heat of air under constant pressure [J kg-1 K-1]
-  double Ri = la_sw * globalRad_Wpm2ps + la_lw * StefanBoltzmanConstant * pow(Te_K, 4.);  // leaf absorption in short-wave and long-wave radiation, Yu et al. eq.9
+  double Ri = la_sw * globalRad_Wpm2 + la_lw * StefanBoltzmanConstant * pow(Te_K, 4.);  // leaf absorption in short-wave and long-wave radiation, Yu et al. eq.9
 
   // assuming that crop_AerodynamicResistance for heat and for water vapor is similar
   double he = rho_air * Cp_air / (1e3*vc_PsycrometerConstant * (crop_AerodynamicResistance + crop_StomataResistance));  // water tranfer coefficient, Paw 1987 eq.14a (=Yu et al. 2001 eq.13)
-  double ht = rho_air * Cp_air / crop_AerodynamicResistance;                                                        // heat transfer coefficient, Paw 1987 eq.14b (=Yu et al. 2001 eq.14)
+  double ht = rho_air * Cp_air / crop_AerodynamicResistance;                                                            // heat transfer coefficient, Paw 1987 eq.14b (=Yu et al. 2001 eq.14)
 
   // // dry surface temperature (operative temperature)
   // // Paw 1987 eq.4 and eq.5
@@ -3789,8 +3830,8 @@ double CropModule::canopTemperature(double globalRad_Wpm2ps,
   double c = term1 * Ta_K * Ta_K - Ri + he * 1e3*vc_VapourPressure;
   double term2 = b * b - 4. * a * c;
   assert(term2 > 0.);
-  double delta_T = (-b + sqrt(term2)) / (2. * a); // positive sqrt
-  // double delta_T = (-2. * c) / (b + sqrt(term2)); // algebraic equivalent for positive sqrt; should be more numerically stable 
+  // double delta_T = (-b + sqrt(term2)) / (2. * a); // positive sqrt
+  double delta_T = (-2. * c) / (b + sqrt(term2)); // algebraic equivalent for positive sqrt; should be more numerically stable 
   // double delta_T = (-b - sqrt(term2)) / (2. * a); // negative sqrt; not physically meaningful
 
   return Ta_K + delta_T;                                                                                    // canopy temperature = air temperature + temperature difference

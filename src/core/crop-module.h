@@ -824,6 +824,8 @@ private:
   double vc_StomataResistance{0.0}; //! old RSTOM
   double vc_StomataResistance_h{0.0};                                       // FS: hourly
   double vc_AerodynamicResistance_h{};                                      // FS: hourly (wind speed dependent) aerodynamic resistance
+  double vc_GrossCO2Assimilation_h_pre{0.0};                                // FS: hourly; for testing only
+  double dT_pre{0.0};                                                       // FS: hourly; for testing only
   std::vector<bool> pc_StorageOrgan;
   int vc_StorageOrgan{4};
   double vc_TargetNConcentration{0.0}; //! old GEHMAX

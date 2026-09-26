@@ -370,7 +370,7 @@
     "__enable_vernalisation_factor_fix__": true,
     "__enable_hourly_photosynthesis__": true,
     "__enable_hourly_outputs__": false,
-    "__enable_leaf_temperature__": false,
+    "__enable_leaf_temperature__": true,
     "__enable_Photosynthesis_WangEngelTemperatureResponse__": false,
     "__//Tair, Idir, Idif": "",
     "__hourly_data__": ["include-from-file", "C:/Users/hswt906fel/Documents/GitHub/zalf-rpm/monica/installer/Hohenfinow2/hourly_data.json"],
