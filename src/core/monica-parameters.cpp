@@ -1632,7 +1632,7 @@ Errors CropModuleParameters::merge(json11::Json j) {
   set_bool_value(__enable_Phenology_WangEngelTemperatureResponse__, j,
                  "__enable_Phenology_WangEngelTemperatureResponse__");
   set_bool_value(__enable_hourly_FvCB_photosynthesis__, j, "__enable_hourly_FvCB_photosynthesis__");
-  set_bool_value(__enable_hourly_photosynthesis__, j, "__enable_hourly_photosynthesis__");
+  set_int_value(__enable_hourly_photosynthesis__, j, "__enable_hourly_photosynthesis__");
   set_bool_value(__enable_hourly_respiration__, j, "__enable_hourly_respiration__");
   set_bool_value(__enable_hourly_outputs__, j, "__enable_hourly_outputs__");
   if (!j["__hourly_in_data__"].is_null()) {

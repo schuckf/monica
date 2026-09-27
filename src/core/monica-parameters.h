@@ -744,7 +744,7 @@ struct DLL_API CropModuleParameters : public Tools::Json11Serializable {
   bool __enable_Photosynthesis_WangEngelTemperatureResponse__{ false };
   bool __enable_hourly_FvCB_photosynthesis__{ false };
   
-  bool __enable_hourly_photosynthesis__{ false }; //FS: should be false by default
+  int __enable_hourly_photosynthesis__{ 0 };      //FS: should be 0 (=false) by default (1=true, 2=minimal version)
   bool __enable_hourly_respiration__{ false };    //FS: should be false by default
   bool __enable_hourly_outputs__{ false };        //FS: should be false by default
   json11::Json::object __hourly_in_data__;        //FS: quick & dirty option to read in hourly irradiance and temperature data dictionary style

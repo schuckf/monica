@@ -222,18 +222,26 @@ public:
                              double vc_SaturatedVapourPressureSlope,
                              double vc_PsycrometerConstant);
 
-  struct hp {
-    double leafT;
-    double solarEl;
-    double globalRad;
-    double extraRad;
+  struct subdaily_data {
+    std::vector<double> hourlyGlobrad;
+    std::vector<double> hourlyExtrarad;
+    std::vector<double> hourlySolarEl;
+    std::vector<double> hourlyAirT;
+    std::vector<double> hourlyIdif;
+    std::vector<double> hourlyIdir;
+    int sunriseH;
+    int sunsetH;
   };
+
+  subdaily_data subdaily_meteodata(const Tools::Date &currentDate, double vw_MinAirTemperature, double vw_MaxAirTemperature);
+
   struct GP_results {
     double A;       // canopy gross photosynthesis for the whole canopy
     double A_Ref;   // canopy gross photosynthesis for the whole canopy
     double KTkc;    // Factor needed to account for temperature-dependency of Michaelis-Menten constant for CO2 (photosynthesis method).
     double LAI_sl;  // canopy sunlit LAI
     double A_sl;    // sunlit canopy gross photosynthesis (A_sl_canop * LAI_sl_canop)
+    double T_canop; // canopy temperature (on average, over all layers and shaded & sunlit leaves; first guess: air temperature)
   };
   GP_results fc_CropGrossPhotosynthesis_h(double inst_diff_rad,
                                           double inst_dir_rad,
@@ -241,6 +249,8 @@ public:
                                           double leafTemperature,
                                           double vw_AtmosphericCO2Concentration); // ,
                                           // double vw_AtmosphericO3Concentration);
+
+  GP_results subdaily_photosynthesis(double h, const CropModule::subdaily_data &sd, double vw_AtmosphericCO2Concentration, double parfrac, bool cscor, bool parcor);
 
   void fc_CropPhotosynthesis(double vw_MeanAirTemperature,
                              double vw_MaxAirTemperature,

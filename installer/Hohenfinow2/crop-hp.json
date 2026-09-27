@@ -368,7 +368,7 @@
     "CropParameters": {
     "=": ["include-from-file", "general/crop.json"],
     "__enable_vernalisation_factor_fix__": true,
-    "__enable_hourly_photosynthesis__": true,
+    "__enable_hourly_photosynthesis__": 1,
     "__enable_hourly_outputs__": false,
     "__enable_Photosynthesis_WangEngelTemperatureResponse__": false,
     "__//Tair, Idir, Idif": "",
