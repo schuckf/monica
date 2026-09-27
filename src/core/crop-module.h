@@ -213,14 +213,14 @@ public:
                                                   double vw_WindSpeed,
                                                   double vw_WindSpeedHeight);
 
-  double canopTemperature(double globalRad_Wpm2ps,
-                          double Ta_K,
-                          double crop_AerodynamicResistance,
-                          double crop_SurfaceResistance,
-                          double vc_VapourPressure,
-                          double vc_SaturatedVapourPressure,
-                          double vc_SaturatedVapourPressureSlope,
-                          double vc_PsycrometerConstant);
+  double leafTemperature_Paw(double globalRad_Wpm2ps,
+                             double Ta_K,
+                             double crop_AerodynamicResistance,
+                             double crop_SurfaceResistance,
+                             double vc_VapourPressure,
+                             double vc_SaturatedVapourPressure,
+                             double vc_SaturatedVapourPressureSlope,
+                             double vc_PsycrometerConstant);
 
   struct hp {
     double leafT;

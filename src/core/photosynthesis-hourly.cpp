@@ -86,12 +86,12 @@ double hPhoto::diffuse_fraction_cscor(double diffuse_fraction, double solar_elev
   assert((diffuse_fraction >= 0.) && (diffuse_fraction <= 1.)); // 0 <= diffuse_fraction <= 1 required!
   /*if ((diffuse_fraction < 0) || (diffuse_fraction > 1))  // ((diffuse_fraction < -epsilon) || (diffuse_fraction > 1 + epsilon))
   {
-    throw runtime_error("diffuse_fraction_cscor calculation failed! requires 0 <= diffuse_fraction <= 1");
+    throw invalid_argument("diffuse_fraction_cscor calculation failed! requires 0 <= diffuse_fraction <= 1");
   }*/
   assert((solar_elevation >= 0.) && (solar_elevation <= (0.5 * M_PI))); // 0 <= solar_elevation <= pi/2 required!
   /*if ((solar_elevation < 0) && (solar_elevation > (0.5 * M_PI)))  // ((solar_elevation < -epsilon) && (solar_elevation > (0.5 * pi) + epsilon))
   {
-    throw runtime_error("diffuse_fraction_cscor calculation failed! requires 0 <= solar_elevation <= 0.5*pi");
+    throw invalid_argument("diffuse_fraction_cscor calculation failed! requires 0 <= solar_elevation <= 0.5*pi");
   }*/
   return 1. / (1. + (1. - pow(diffuse_fraction, 2)) * pow(cos(0.5 * M_PI - solar_elevation), 2) * pow(cos(solar_elevation), 3)); // Spitters eq. 9
 }
@@ -101,7 +101,7 @@ double hPhoto::diffuse_fraction_parcor(double diffuse_fraction)
   assert((diffuse_fraction >= 0.) && (diffuse_fraction <= 1.)); // 0 <= diffuse_fraction <= 1 required!
   /*if ((diffuse_fraction < 0) || (diffuse_fraction > 1))  // ((diffuse_fraction < 0 - epsilon) || (diffuse_fraction > 1 + epsilon))
   {
-    throw runtime_error("diffuse_fraction_cscor calculation failed! requires 0 <= diffuse_fraction <= 1");
+    throw invalid_argument("diffuse_fraction_cscor calculation failed! requires 0 <= diffuse_fraction <= 1");
   }*/
   return 1. + 0.3 * (1. - pow(diffuse_fraction, 2)); // Spitters eq. 10
 }
@@ -222,7 +222,7 @@ dL_result hPhoto::Spitters_canop_photo_dL(double beta, double L, double I0_dr, d
   } else if (lrc == hPhoto::lrc_style::nonrectangular_hyperbola) {
     throw runtime_error("Light response curve style nonrectangular_hyperbola not implemented");
   } else {
-    throw runtime_error("Invalid light response curve style!");
+    throw invalid_argument("Invalid light response curve style!");
   }
 
   double A_sl = 0.;
@@ -237,7 +237,7 @@ dL_result hPhoto::Spitters_canop_photo_dL(double beta, double L, double I0_dr, d
     } // else if (lrc == hPhoto::lrc_style::nonrectangular_hyperbola) {
     //   throw runtime_error("Light response curve style nonrectangular_hyperbola not implemented");
     // } else {
-    //   throw runtime_error("Invalid light response curve style!");
+    //   throw invalid_argument("Invalid light response curve style!");
     // }
   } else {
     // correction to account for the variation in leaf angle and thus in illumination intensity for sunlit leaf area
@@ -263,7 +263,7 @@ dL_result hPhoto::Spitters_canop_photo_dL(double beta, double L, double I0_dr, d
         } // else if (lrc == hPhoto::lrc_style::nonrectangular_hyperbola) {
         //   throw runtime_error("Light response curve style nonrectangular_hyperbola not implemented");
         // } else {
-        //   throw runtime_error("Invalid light response curve style!");
+        //   throw invalid_argument("Invalid light response curve style!");
         // }
       }
     } else if (leaf_angle_integration_style == hPhoto::la_integ_style::sucros87_3pt) { // SUCROS87 Subroutine ASS (Spitters et al. 1989) integration over leaf angle distribution
@@ -280,11 +280,11 @@ dL_result hPhoto::Spitters_canop_photo_dL(double beta, double L, double I0_dr, d
         } // else if (lrc == hPhoto::lrc_style::nonrectangular_hyperbola) {
         //   throw runtime_error("Light response curve style nonrectangular_hyperbola not implemented");
         // } else {
-        //   throw runtime_error("Invalid light response curve style!");
+        //   throw invalid_argument("Invalid light response curve style!");
         // }
       }
     } else {
-      throw runtime_error("Incvalid leaf_angle_integration_style!");
+      throw invalid_argument("Incvalid leaf_angle_integration_style!");
     }
   }
 
@@ -408,7 +408,7 @@ Spitters_canop_radiation_dL_result Spitters_canop_radiation_dL(double beta, doub
   double Ia_dr = (sinbeta <= hPhoto::eps) ? 0.0 : (1. - rho) * I0_dr * k_dr * exp(-k_dr * L);       // eq. 11, re-arranged to use k_dr similarly to Spitters et al. (1989, p. 154), safeguard added
   double Ia_drdr = (sinbeta <= hPhoto::eps) ? 0.0 : (1. - sigma) * I0_dr * k_bl * exp(- k_bl * L);  // eq. 11, but with k_bl (instead of k_dr) in the exponent; similar to implementation in Spitters et al. (1989, p. 154), safeguard added
   double Ia_sh = max(0.0, Ia_df + (Ia_dr - Ia_drdr));                                               // absorbed light energy shaded leaf area (absorbs the diffuse flux and the diffused component of the direct flux) [J m-2 leaf s-1], safeguard added
-  double Ia_sldr = (sinbeta <= hPhoto::eps) ? 0.0 : (1. - sigma) * I0_dr / sinbeta;                          // direct flux is absorbed by a leaf perpendicular to the direct beam, safeguard added
+  double Ia_sldr = (sinbeta <= hPhoto::eps) ? 0.0 : (1. - sigma) * I0_dr / sinbeta;                 // direct flux is absorbed by a leaf perpendicular to the direct beam, safeguard added
   return {Ia_sh, Ia_sldr, f_sl, Ia_dr};
 }
 
@@ -424,7 +424,7 @@ double Spitters_A_sh_dL(double Ia_sh, double Amax_sh, double epsilon_sh, hPhoto:
     // non-rectangular hyperbola
     throw runtime_error("Light response curve style nonrectangular_hyperbola not implemented!");
   } else {
-    throw runtime_error("Incvalid light response curve style!");
+    throw invalid_argument("Incvalid light response curve style!");
   }
 }
 
@@ -449,7 +449,7 @@ double Spitters_A_sl_dL(double A_sh, double Ia_sldr, double Amax_sl, double epsi
     // non-rectangular hyperbola
     throw runtime_error("Light response curve style nonrectangular_hyperbola not implemented!");
   } else {
-    throw runtime_error("Incvalid light response curve style!");
+    throw invalid_argument("Incvalid light response curve style!");
   }
 }
 
