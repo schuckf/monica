@@ -792,6 +792,7 @@ private:
   double vc_PhotActRadiationMean{0.0}; //! old RDN
   double pc_PlantDensity{};
   double vc_PotentialTranspiration{0.0};
+  double vc_PotentialTranspiration_h{0.0};                                  // FS: hourly
   double vc_ReferenceEvapotranspiration{0.0};
   double vc_RelativeTotalDevelopment{0.0};
   double vc_RemainingEvapotranspiration{0.0};

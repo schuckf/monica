@@ -1081,7 +1081,7 @@ void CropModule::step(double vw_MeanAirTemperature,
 
     if (cropPs.__enable_hourly_photosynthesis__ == 1) {
       // daily interception storage
-      fc_CropInterception(vw_GrossPrecipitation);
+      fc_CropInterception(vw_GrossPrecipitation);             // FS: ideally, the exact hour of precipitation should not matter too much, since the soil hopefully dampens this
       vc_InterceptionStorage_na = vc_InterceptionStorage;     // @ToDo FS: for debugging and comparison
 
       // const hPhoto::unit hourly_data_in_unit = hPhoto::unit::umolpm2ps; // FS: depends on input data
@@ -1097,7 +1097,7 @@ void CropModule::step(double vw_MeanAirTemperature,
       }
       */
 
-      double vw_ReferenceEvapotranspiration_h = -1.0;
+      double vw_ReferenceEvapotranspiration_h = -1.0; // since this is not read in hourly
 
       auto sp = subdaily_meteodata(currentDate, vw_MinAirTemperature, vw_MaxAirTemperature);
 
@@ -1109,8 +1109,9 @@ void CropModule::step(double vw_MeanAirTemperature,
       vc_MaintenanceRespirationAS = 0.0;
       vector<double> hourly_KTkc_day;
       // vector<double> hourly_GP_day;
-      vector<double> hourly_ActualTranspirationDeficit_d;
-      vector<double> hourly_PotentialTranspirationDeficit_d;
+      vector<double> hourly_ActualTranspiration_d;
+      vector<double> hourly_PotentialTranspiration_d;
+      vc_ReferenceEvapotranspiration = 0.0;           // FS: for comparison
 
       for (int h = 0; h < 24; ++h) {  // hourly overclocked loop
         bool is_daytime = ((h >= sp.sunriseH) && (h < sp.sunsetH)) ? true : false;
@@ -1149,7 +1150,7 @@ void CropModule::step(double vw_MeanAirTemperature,
         double vc_Assimilates_h = vc_GrossCO2Assimilation_h * 30.0 / 44.0;
 
 #pragma region apply photo reduction factors // apply factors that reduce (gross) photosynthesis
-        // gross photosynthesis * pc_FieldConditionModifier * vc_CropFrostRedux * (vc_OxygenDeficit or vc_TranspirationDeficit)
+        // gross photosynthesis * vc_TransplantEfficiency * pc_FieldConditionModifier * vc_CropFrostRedux * (vc_OxygenDeficit or vc_TranspirationDeficit)
 
         // [TRANSPLANT SHOCK] Photosynthesis Limitation.
         // Reduces the daily gross CO2 assimilation rate according to the shock recovery efficiency factor.
@@ -1230,51 +1231,58 @@ void CropModule::step(double vw_MeanAirTemperature,
         fc_CropWaterUptake_h(soilColumn.vm_GroundwaterTableLayer, vc_ReferenceEvapotranspiration_h);  //, vc_OxygenDeficit_h);
                                                                                                       // FS: This should calculate vc_TranspirationDeficit_h, which affects
                                                                                                       //     CropModule::fc_CropDevelopmentalStage(...) and CropModule::fc_DroughtImpactOnFertility()
-        // @ToDo FS: not sure yet if the water balance works correctly -> teste if this works as intended
+        // @ToDo FS: not sure yet if the water balance works correctly -> test if this works as intended
       
         // FS: do not change too much at once
         // fc_DroughtImpactOnFertility_h();      // = f(vc_TranspirationDeficit_h)
 
         // prepare aggregation back to daily time step
-        hourly_ActualTranspirationDeficit_d.push_back(vc_ActualTranspirationDeficit_h);
-        hourly_PotentialTranspirationDeficit_d.push_back(vc_PotentialTranspirationDeficit_h);
+        hourly_ActualTranspiration_d.push_back(vc_ActualTranspiration_h);
+        hourly_PotentialTranspiration_d.push_back(vc_PotentialTranspiration_h);
 
 #pragma endregion further hourly calculations
 
         // accumulation of daily values (aggregation back to daily time step, sum)
         vc_GrossCO2Assimilation += vc_GrossCO2Assimilation_h;
         vc_GrossPhotosynthesis += vc_GrossPhotosynthesis_h;
+        vc_GrossPhotosynthesis_mol += vc_GrossPhotosynthesis_mol_h;
         vc_GrossPhotosynthesisReference_mol += vc_GrossPhotosynthesisReference_mol_h;
         vc_Assimilates += vc_Assimilates_h;
         vc_GrossAssimilates += vc_GrossAssimilates_h;
         if (cropPs.__enable_hourly_respiration__) { vc_MaintenanceRespirationAS += vc_MaintenanceRespirationAS_h; }
 
         if (cropPs.__enable_leaf_temperature__) {
-          // calculate resistances for the crop (as opposed to the FAO reference grass)
-          auto crop_r = crop_aerodyn_stomata_surface_resistances(vc_SaturatedVapourPressure_h,
-                                                                 vc_VapourPressure_h,
-                                                                 vc_CropHeight,
-                                                                 vc_GrossCO2Assimilation_h,
-                                                                 LAI_sl_h,
-                                                                 vw_AtmosphericCO2Concentration,
-                                                                 cropPs.pc_StomataConductanceAlpha,
-                                                                 cropPs.pc_SaturationBeta,
-                                                                 vs_HeightNN,
-                                                                 vw_WindSpeed, // wind speed hourly data missing; use daily data for now
-                                                                 vw_WindSpeedHeight);
-          vc_crop_AerodynamicResistance_h = crop_r.r_aero;
-          vc_crop_StomataResistance_h = crop_r.r_stom;
-          vc_crop_SurfaceResistance_h = crop_r.r_surf;
+          throw runtime_error("Leaf or canopy temperature not implemented yet!");
+          // // calculate resistances for the crop (as opposed to the FAO reference grass)
+          // auto crop_r = crop_aerodyn_stomata_surface_resistances(vc_SaturatedVapourPressure_h,
+          //                                                        vc_VapourPressure_h,
+          //                                                        vc_CropHeight,
+          //                                                        vc_GrossCO2Assimilation_h,
+          //                                                        LAI_sl_h,
+          //                                                        vw_AtmosphericCO2Concentration,
+          //                                                        cropPs.pc_StomataConductanceAlpha,
+          //                                                        cropPs.pc_SaturationBeta,
+          //                                                        vs_HeightNN,
+          //                                                        vw_WindSpeed, // wind speed hourly data missing; use daily data for now
+          //                                                        vw_WindSpeedHeight);
+          // vc_crop_AerodynamicResistance_h = crop_r.r_aero;
+          // vc_crop_StomataResistance_h = crop_r.r_stom;
+          // vc_crop_SurfaceResistance_h = crop_r.r_surf;
         }
+
+        vc_ReferenceEvapotranspiration += vc_ReferenceEvapotranspiration_h; // FS: for comparison
 
         _noOfHourlySteps_Devstage_gt_0++;
       }
 
       // aggregation back to daily time step, mean
       // daily transpiration deficit is needed for fc_DroughtImpactOnFertility(), which affects CropModule::fc_CropDryMatter(vw_MeanAirTemperature) via vc_DroughtImpactOnFertility
-      vc_ActualTranspirationDeficit = accumulate(hourly_ActualTranspirationDeficit_d.begin(), hourly_ActualTranspirationDeficit_d.end(), 0.);
-      vc_PotentialTranspirationDeficit = accumulate(hourly_PotentialTranspirationDeficit_d.begin(), hourly_PotentialTranspirationDeficit_d.end(), 0.);
-      vc_TranspirationDeficit = (vc_PotentialTranspirationDeficit > 0) ? vc_ActualTranspirationDeficit / vc_PotentialTranspirationDeficit : 1.0;
+      vc_ActualTranspiration = accumulate(hourly_ActualTranspiration_d.begin(), hourly_ActualTranspiration_d.end(), 0.);
+      vc_PotentialTranspiration = accumulate(hourly_PotentialTranspiration_d.begin(), hourly_PotentialTranspiration_d.end(), 0.);
+      // std::cerr << "---- " << currentDate.toIsoDateString() << " ----\n"
+      //           << "ActTransp (based on hourly agg): " << vc_ActualTranspiration << std::endl
+      //           << "PotTransp (based on hourly agg): " << vc_PotentialTranspiration << std::endl;
+      vc_TranspirationDeficit = (vc_PotentialTranspiration > 0) ? vc_ActualTranspiration / vc_PotentialTranspiration : 1.0;
       // @ ToDo FS: Or should we calculate the daily vc_TranspirationDeficit in a similar way as in CropModule::fc_CropWaterUptake(...)? Would this maybe work by changing fc_CropWaterUptake(...)
       //            to a function that does not perform hidden modifications to class or instance attrs. Instead, all inputs and outputs need to be provided and modification of CropModule attrs
       //            happens in a next step. That way, daily vc_TranspirationDeficit can be calculated without  modifying anything, and maybe additionally the code could even be applied to daily
@@ -1488,6 +1496,10 @@ void CropModule::step(double vw_MeanAirTemperature,
       vc_ReferenceEvapotranspiration_na = vw_ReferenceEvapotranspiration;
     }
     auto [vc_Transpiration_na, vc_TranspirationDeficit_na] =  fc_CropWaterUptake_notApplied(soilColumn.vm_GroundwaterTableLayer, vc_ReferenceEvapotranspiration_na, vc_InterceptionStorage_na, 6.5);  // pair<std::vector<double>, double> na = ...; auto vc_Transpiration_na = na.first; auto vc_TranspirationDeficit_na = na.second;
+    // std::cerr << "---- " << currentDate.toIsoDateString() << " daily vs hourlyagg ---- \n"
+    //           << "RefET: " << vc_ReferenceEvapotranspiration_na << "     " << vc_ReferenceEvapotranspiration << std::endl
+    //           << "TranspDef: " << vc_TranspirationDeficit_na  << "     " << vc_TranspirationDeficit << std::endl;
+    // for (size_t i=0; i < vc_Transpiration_na.size(); ++i) std:: cerr << "Transp. Layer" << i << ": " << vc_Transpiration_na.at(i) << "     " << vc_Transpiration.at(i) << std::endl;
     // */
 
     fc_HeatStressImpact(vw_MaxAirTemperature,
@@ -3980,31 +3992,31 @@ void CropModule::fc_DroughtImpactOnFertility() {
   }
 }
 
-/**
- * @brief Drought impact on crop fertility
- */
-void CropModule::fc_DroughtImpactOnFertility_h() {
-  if (vc_TranspirationDeficit_h < 0.0) vc_TranspirationDeficit_h = 0.0;
+// /**
+//  * @brief Drought impact on crop fertility
+//  */
+// void CropModule::fc_DroughtImpactOnFertility_h() {
+//   if (vc_TranspirationDeficit_h < 0.0) vc_TranspirationDeficit_h = 0.0;
 
-  // Fertility of the crop is reduced in cases of severe drought during bloom
-  if ((vc_TranspirationDeficit_h < (pc_DroughtImpactOnFertilityFactor *
-                                  pc_DroughtStressThreshold[vc_DevelopmentalStage])) &&
-      (pc_AssimilatePartitioningCoeff[vc_DevelopmentalStage][vc_StorageOrgan] > 0.0)) {
+//   // Fertility of the crop is reduced in cases of severe drought during bloom
+//   if ((vc_TranspirationDeficit_h < (pc_DroughtImpactOnFertilityFactor *
+//                                   pc_DroughtStressThreshold[vc_DevelopmentalStage])) &&
+//       (pc_AssimilatePartitioningCoeff[vc_DevelopmentalStage][vc_StorageOrgan] > 0.0)) {
 
-    double vc_TranspirationDeficitHelper_h = vc_TranspirationDeficit_h /
-                                            (pc_DroughtImpactOnFertilityFactor *
-                                              pc_DroughtStressThreshold[vc_DevelopmentalStage]);
+//     double vc_TranspirationDeficitHelper_h = vc_TranspirationDeficit_h /
+//                                             (pc_DroughtImpactOnFertilityFactor *
+//                                               pc_DroughtStressThreshold[vc_DevelopmentalStage]);
 
-    if (vc_OxygenDeficit_h < 1.0) {
-      vc_DroughtImpactOnFertility_h = 1.0;
-    } else {
-      vc_DroughtImpactOnFertility_h =
-          1.0 - ((1.0 - vc_TranspirationDeficitHelper_h) * (1.0 - vc_TranspirationDeficitHelper_h));
-    }
-  } else {
-    vc_DroughtImpactOnFertility_h = 1.0;
-  }
-}
+//     if (vc_OxygenDeficit_h < 1.0) {
+//       vc_DroughtImpactOnFertility_h = 1.0;
+//     } else {
+//       vc_DroughtImpactOnFertility_h =
+//           1.0 - ((1.0 - vc_TranspirationDeficitHelper_h) * (1.0 - vc_TranspirationDeficitHelper_h));
+//     }
+//   } else {
+//     vc_DroughtImpactOnFertility_h = 1.0;
+//   }
+// }
 
 /**
  * @brief Crop Nitrogen
@@ -4806,7 +4818,7 @@ double CropModule::fc_ReferenceEvapotranspiration_h(double vw_DewAirTemperature,
   vc_AerodynamicResistance_h = 208.0 / vc_WindSpeed_h_2m;   // FS: 208.0 is the param assumed by FAO-56 for the reference crop!
 
   if (vc_GrossPhotosynthesisReference_mol_h <= 0.0) {
-    vc_StomataResistance_h = 999999.9; // [s m-1]         // FS: Does this lead to unrealistic base resistance at night for the hourly version? -> check again if value 200 suggested by paper [source?] makes sense
+    vc_StomataResistance_h = 288.0; // 999999.9; // [s m-1]         // FS: MONICA default 999999.9 leads to unrealistic base resistance at night for the hourly version -> use 288.0 = 200.0 * 1.44, since 200 was as suggested for bulk surface resistance by Allen et al. (2006) [https://doi.org/10.1016/j.agwat.2005.03.007]
   } else {
 
     // crop stomata resistance according to Yu et al. 2001 (FS: which Yu et al. 2001 publication?
@@ -4964,8 +4976,12 @@ double CropModule::fc_ReferenceEvapotranspiration_notApplied(double vw_MaxAirTem
   // Calculation of the air saturation deficit
   vc_SaturationDeficit = vc_SaturatedVapourPressure - vc_VapourPressure;
 
-  // Slope of saturation water vapour pressure-to-temperature relation (eq.13)
-  vc_SaturatedVapourPressureSlope = (4098.0 * vc_SaturatedVapourPressure) / ((vw_MeanAirTemperature + 237.3) * (vw_MeanAirTemperature + 237.3));
+  // // Slope of saturation water vapour pressure-to-temperature relation (eq.13)
+  // vc_SaturatedVapourPressureSlope = (4098.0 * vc_SaturatedVapourPressure) / ((vw_MeanAirTemperature + 237.3) * (vw_MeanAirTemperature + 237.3));
+  // Slope of saturation water vapour pressure-to-temperature relation
+  vc_SaturatedVapourPressureSlope =
+    (4098.0 * (0.6108 * exp((17.27 * vw_MeanAirTemperature) / (vw_MeanAirTemperature + 237.3)))) /
+    ((vw_MeanAirTemperature + 237.3) * (vw_MeanAirTemperature + 237.3));
 
   // Calculation of wind speed in 2m height
   vc_WindSpeed_2m = max(0.5, vw_WindSpeed * (4.87 / (log(67.8 * vw_WindSpeedHeight - 5.42))));
@@ -5325,7 +5341,7 @@ void CropModule::fc_CropWaterUptake_h(size_t vc_GroundwaterTable,
   size_t nols = soilColumn.vs_NumberOfLayers();
   double layerThickness = soilColumn.vs_LayerThickness();
   vc_PotentialTranspirationDeficit_h = 0.0;         // [mm]
-  double vc_PotentialTranspiration_h = 0.0;         // [mm]
+  vc_PotentialTranspiration_h = 0.0;         // [mm]
   double vc_PotentialEvapotranspiration_h = 0.0;    // [mm]
   vc_TranspirationReduced_h = 0.0;                  // [mm]
   vc_ActualTranspiration_h = 0.0;                   // [mm]
@@ -5472,10 +5488,10 @@ void CropModule::fc_CropWaterUptake_h(size_t vc_GroundwaterTable,
       } else {
         vc_PotentialTranspirationDeficit_h = 0.0;
       }
-      double vc_TranspirationReduced_h = vc_Transpiration[i_Layer] * (1.0 - vc_TranspirationRedux[i_Layer]);
+      vc_TranspirationReduced_h = vc_Transpiration[i_Layer] * (1.0 - vc_TranspirationRedux[i_Layer]);
 
       //! @todo Claas: How can we lower the groundwater table if crop water uptake is restricted in that layer?
-      double vc_ActualTranspirationDeficit_h = max(vc_TranspirationReduced_h, vc_PotentialTranspirationDeficit_h); //[mm]
+      vc_ActualTranspirationDeficit_h = max(vc_TranspirationReduced_h, vc_PotentialTranspirationDeficit_h); //[mm]
       if (vc_ActualTranspirationDeficit_h > 0.0) {
         if (i_Layer < min(vc_RootingZone, vc_GroundwaterTable + 1)) {
           for (size_t i_Layer2 = i_Layer + 1; i_Layer2 < min(vc_RootingZone, vc_GroundwaterTable + 1); i_Layer2++) {
@@ -5557,8 +5573,8 @@ std::pair<std::vector<double>, double> CropModule::fc_CropWaterUptake_notApplied
 
   vc_PotentialEvapotranspiration = vc_ReferenceEvapotranspiration * vc_KcFactor; // [mm]
 
-  if (vc_PotentialEvapotranspiration > 1.0) {   
-    vc_PotentialEvapotranspiration = 1.0;
+  if (vc_PotentialEvapotranspiration > potET_limit) {   
+    vc_PotentialEvapotranspiration = potET_limit;
   }
 
   // FS: altered CropModule attrs here: vc_InterceptionStorage, vc_RemainingEvapotranspiration, vc_EvaporatedFromIntercept
