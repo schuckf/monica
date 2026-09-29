@@ -1073,16 +1073,23 @@ void CropModule::step(double vw_MeanAirTemperature,
 
     vc_SoilCoverage = fc_SoilCoverage();
 
+    // daily interception storage
+    auto [vc_InterceptionStorage_d, vc_NetPrecipitation_d] = fc_CropInterception(vw_GrossPrecipitation, vc_InterceptionStorage, vc_NetPrecipitation);         // FS: ideally, the exact hour of precipitation should not matter too much, since the soil hopefully dampens this
 
     // hourly overclocked canopy photosynthesis
 #pragma region hourly overclocked
-
-    double vc_InterceptionStorage_na = 0.0;                   // @ToDo FS: for debugging and comparison
-
     if (cropPs.__enable_hourly_photosynthesis__ == 1) {
-      // daily interception storage
-      fc_CropInterception(vw_GrossPrecipitation);             // FS: ideally, the exact hour of precipitation should not matter too much, since the soil hopefully dampens this
-      vc_InterceptionStorage_na = vc_InterceptionStorage;     // @ToDo FS: for debugging and comparison
+
+
+      // FS DEBUG LAI
+      // FS: Maybe somehow create a local copy of water available for the day, then subtract hourly transpiration later for each fc_CropWaterUptake_h(...)?
+      // size_t nols = soilColumn.vs_NumberOfLayers();
+      // double layerThickness = soilColumn.vs_LayerThickness();
+      // vector<double> dailyAvailableSoilWater_mm_per_layer(nols);
+      // for (size_t i_Layer = 0; i_Layer < nols; ++i_Layer) {
+      //   dailyAvailableSoilWater_mm_per_layer[i_Layer] = (soilColumn[i_Layer].get_Vs_SoilMoisture_m3() - soilColumn[i_Layer].vs_PermanentWiltingPoint()) * layerThickness * 1000.0; // [mm]
+      // }
+      
 
       // const hPhoto::unit hourly_data_in_unit = hPhoto::unit::umolpm2ps; // FS: depends on input data
       const double parfrac = 0.45;
@@ -1097,11 +1104,11 @@ void CropModule::step(double vw_MeanAirTemperature,
       }
       */
 
+      auto sp = subdaily_meteodata(currentDate, vw_MinAirTemperature, vw_MaxAirTemperature, vw_WindSpeed);
       double vw_ReferenceEvapotranspiration_h = -1.0; // since this is not read in hourly
 
-      auto sp = subdaily_meteodata(currentDate, vw_MinAirTemperature, vw_MaxAirTemperature);
-
       double vc_GrossCO2Assimilation = 0.0;
+      double vc_GrossCO2AssimilationReference = 0.0;
       vc_GrossPhotosynthesis = 0.0;
       vc_GrossPhotosynthesisReference_mol = 0.0;
       vc_Assimilates = 0.0;
@@ -1111,6 +1118,7 @@ void CropModule::step(double vw_MeanAirTemperature,
       // vector<double> hourly_GP_day;
       vector<double> hourly_ActualTranspiration_d;
       vector<double> hourly_PotentialTranspiration_d;
+
       vc_ReferenceEvapotranspiration = 0.0;           // FS: for comparison
 
       for (int h = 0; h < 24; ++h) {  // hourly overclocked loop
@@ -1214,10 +1222,18 @@ void CropModule::step(double vw_MeanAirTemperature,
 #pragma region further hourly calculations
         // calculate reference evapotranspiration if not provided directly via climate files
         double vc_ReferenceEvapotranspiration_h{0.0};
+
+
+
+
+
+        // FS DEBUG LAI
         if (vw_ReferenceEvapotranspiration_h < 0) {
-          vc_ReferenceEvapotranspiration_h = fc_ReferenceEvapotranspiration_h(vw_MinAirTemperature, -1.0,
+          vc_ReferenceEvapotranspiration_h = fc_ReferenceEvapotranspiration_h(vw_MinAirTemperature,
+                                                                              sp.hourlyRH.at(h),
                                                                               vw_MeanAirTemperature,
-                                                                              vw_WindSpeed, vw_WindSpeedHeight,
+                                                                              sp.hourlyWindSpeed.at(h), // vw_WindSpeed,
+                                                                              vw_WindSpeedHeight,
                                                                               vw_AtmosphericCO2Concentration,
                                                                               sp.hourlyExtrarad.at(h), sp.hourlyExtrarad.at(sp.sunsetH-3),
                                                                               sp.hourlyGlobrad.at(h), sp.hourlyGlobrad.at(sp.sunsetH-3),
@@ -1228,11 +1244,43 @@ void CropModule::step(double vw_MeanAirTemperature,
           vc_ReferenceEvapotranspiration_h = vw_ReferenceEvapotranspiration_h;
         }
 
+
+        if (sp.hourlyPrecip.at(h) > -1.0) { // hourly data available
+          auto [vc_InterceptionStorage_h, vc_NetPrecipitation_h] = fc_CropInterception(sp.hourlyPrecip.at(h), vc_InterceptionStorage, vc_NetPrecipitation);
+          vc_InterceptionStorage = vc_InterceptionStorage_h;
+          vc_NetPrecipitation = vc_NetPrecipitation_h;
+        } else {
+          if (h == 0) { // fill daily interception storage at one specific hour only
+            vc_InterceptionStorage = vc_InterceptionStorage_d;
+            vc_NetPrecipitation = vc_NetPrecipitation_d;
+          }
+        }
+
+
         fc_CropWaterUptake_h(soilColumn.vm_GroundwaterTableLayer, vc_ReferenceEvapotranspiration_h);  //, vc_OxygenDeficit_h);
                                                                                                       // FS: This should calculate vc_TranspirationDeficit_h, which affects
                                                                                                       //     CropModule::fc_CropDevelopmentalStage(...) and CropModule::fc_DroughtImpactOnFertility()
+
+
+
+
+
+
+
+
+
         // @ToDo FS: not sure yet if the water balance works correctly -> test if this works as intended
       
+
+
+
+        // FS DEBUG LAI dd
+        // vc_ReferenceEvapotranspiration_h = vc_ReferenceEvapotranspiration;
+
+
+
+
+
         // FS: do not change too much at once
         // fc_DroughtImpactOnFertility_h();      // = f(vc_TranspirationDeficit_h)
 
@@ -1244,11 +1292,15 @@ void CropModule::step(double vw_MeanAirTemperature,
 
         // accumulation of daily values (aggregation back to daily time step, sum)
         vc_GrossCO2Assimilation += vc_GrossCO2Assimilation_h;
+        vc_GrossCO2AssimilationReference += vc_GrossCO2AssimilationReference_h;
         vc_GrossPhotosynthesis += vc_GrossPhotosynthesis_h;
-        vc_GrossPhotosynthesis_mol += vc_GrossPhotosynthesis_mol_h;
-        vc_GrossPhotosynthesisReference_mol += vc_GrossPhotosynthesisReference_mol_h;
         vc_Assimilates += vc_Assimilates_h;
         vc_GrossAssimilates += vc_GrossAssimilates_h;
+
+        // Calculation of photosynthesis rate from [kg CO2 ha-1 d-1] to [mol m-2 s-1] or [cm3 cm-2 s-1]
+        vc_GrossPhotosynthesis_mol = vc_GrossCO2Assimilation * 22414.0 / (10.0 * 3600.0 * 24.0 * 44.0);
+        vc_GrossPhotosynthesisReference_mol = vc_GrossCO2AssimilationReference * 22414.0 / (10.0 * 3600.0 * 24.0 * 44.0);
+
         if (cropPs.__enable_hourly_respiration__) { vc_MaintenanceRespirationAS += vc_MaintenanceRespirationAS_h; }
 
         if (cropPs.__enable_leaf_temperature__) {
@@ -1263,7 +1315,7 @@ void CropModule::step(double vw_MeanAirTemperature,
           //                                                        cropPs.pc_StomataConductanceAlpha,
           //                                                        cropPs.pc_SaturationBeta,
           //                                                        vs_HeightNN,
-          //                                                        vw_WindSpeed, // wind speed hourly data missing; use daily data for now
+          //                                                        sp.hourlyWindSpeed.at(h), // vw_WindSpeed,
           //                                                        vw_WindSpeedHeight);
           // vc_crop_AerodynamicResistance_h = crop_r.r_aero;
           // vc_crop_StomataResistance_h = crop_r.r_stom;
@@ -1275,6 +1327,9 @@ void CropModule::step(double vw_MeanAirTemperature,
         _noOfHourlySteps_Devstage_gt_0++;
       }
 
+
+
+      // /* FS DEBUG LAI
       // aggregation back to daily time step, mean
       // daily transpiration deficit is needed for fc_DroughtImpactOnFertility(), which affects CropModule::fc_CropDryMatter(vw_MeanAirTemperature) via vc_DroughtImpactOnFertility
       vc_ActualTranspiration = accumulate(hourly_ActualTranspiration_d.begin(), hourly_ActualTranspiration_d.end(), 0.);
@@ -1287,6 +1342,11 @@ void CropModule::step(double vw_MeanAirTemperature,
       //            to a function that does not perform hidden modifications to class or instance attrs. Instead, all inputs and outputs need to be provided and modification of CropModule attrs
       //            happens in a next step. That way, daily vc_TranspirationDeficit can be calculated without  modifying anything, and maybe additionally the code could even be applied to daily
       //            as well as hourly time steps?
+      // */
+
+
+
+
 
       // CropModule::fc_CropDryMatter(...) uses the (daily) vc_KTkc CropModule attr
       vc_KTkc = get<0>(vc_KTkc_vc_KTko(vw_MeanAirTemperature));                                             // FS: reaction speed factor with the (daily) mean temperature (=default daily MONICA)
@@ -1426,6 +1486,21 @@ void CropModule::step(double vw_MeanAirTemperature,
       // fc_CropDryMatter_h(vw_MeanAirTemperature_h);
       */
 
+
+
+std::cerr
+    << "hourly aggregated,"
+    << currentDate.toIsoDateString() << ","
+    << vc_GrossCO2AssimilationReference << ","
+    << vc_GrossPhotosynthesisReference_mol << ","
+    << vc_ReferenceEvapotranspiration << ","
+    << vc_GrossAssimilates << ","
+    << vc_Assimilates
+    << '\n';
+
+
+
+
 #pragma endregion hourly overclocked
     } else {
       fc_CropPhotosynthesis(vw_MeanAirTemperature,
@@ -1433,7 +1508,8 @@ void CropModule::step(double vw_MeanAirTemperature,
                             vw_MinAirTemperature,
                             vw_AtmosphericCO2Concentration,
                             vw_AtmosphericO3Concentration,
-                            currentDate);
+                            currentDate,
+                            vw_WindSpeed);
 
       /* FS: moved outside the if hourly/else block
       // fc_HeatStressImpact(vw_MaxAirTemperature,
@@ -1451,6 +1527,10 @@ void CropModule::step(double vw_MeanAirTemperature,
       // fc_CropDryMatter(vw_MeanAirTemperature);
       */
 
+
+
+
+      // FS DEBUG LAI
       // calculate reference evapotranspiration if not provided directly via climate files
       if (vw_ReferenceEvapotranspiration < 0) {
         vc_ReferenceEvapotranspiration = fc_ReferenceEvapotranspiration(vw_MaxAirTemperature,
@@ -1469,6 +1549,11 @@ void CropModule::step(double vw_MeanAirTemperature,
                          vc_CurrentTotalTemperatureSum,
                          vc_TotalTemperatureSum);  // FS: This calculates vc_TranspirationDeficit, which affects
                                                   //     CropModule::fc_CropDevelopmentalStage(...) and CropModule::fc_DroughtImpactOnFertility()
+
+
+
+
+
     }
 
     // @ToDo FS: Do I understand this correctly?
@@ -1480,11 +1565,14 @@ void CropModule::step(double vw_MeanAirTemperature,
     //             so it applies the drought stress based on the previous time step? -> hourly version fc_CropWaterUptake_h(...) placed inside
     //             the hourly loop and calculated averaged transpiration deficit for the day afterwards for use with other (daily) stress factors
 
-    // /* for comparison/debugging only
-    double vc_ReferenceEvapotranspiration_na;
+
+
+
+
+    /* FS DEBUG LAI dd
     // calculate reference evapotranspiration if not provided directly via climate files
     if (vw_ReferenceEvapotranspiration < 0) {
-      vc_ReferenceEvapotranspiration_na = fc_ReferenceEvapotranspiration_notApplied(vw_MaxAirTemperature,
+      vc_ReferenceEvapotranspiration = fc_ReferenceEvapotranspiration(vw_MaxAirTemperature,
                                                                       vw_MinAirTemperature,
                                                                       vw_RelativeHumidity,
                                                                       vw_MeanAirTemperature,
@@ -1493,13 +1581,42 @@ void CropModule::step(double vw_MeanAirTemperature,
                                                                       vw_AtmosphericCO2Concentration);
     } else {
       // use reference evapotranspiration from climate file
+      vc_ReferenceEvapotranspiration = vw_ReferenceEvapotranspiration;
+    }
+    fc_CropWaterUptake(soilColumn.vm_GroundwaterTableLayer,
+                        vw_GrossPrecipitation,
+                        vc_CurrentTotalTemperatureSum,
+                        vc_TotalTemperatureSum);  // FS: This calculates vc_TranspirationDeficit, which affects
+                                                //     CropModule::fc_CropDevelopmentalStage(...) and CropModule::fc_DroughtImpactOnFertility()
+    // */
+
+
+
+
+
+    // /* for comparison/debugging only
+    double vc_ReferenceEvapotranspiration_na;
+    // calculate reference evapotranspiration if not provided directly via climate files
+    if (vw_ReferenceEvapotranspiration < 0) {
+      vc_ReferenceEvapotranspiration_na = fc_ReferenceEvapotranspiration_notApplied(vw_MaxAirTemperature,
+                                                                                    vw_MinAirTemperature,
+                                                                                    vw_RelativeHumidity,
+                                                                                    vw_MeanAirTemperature,
+                                                                                    vw_WindSpeed,
+                                                                                    vw_WindSpeedHeight,
+                                                                                    vw_AtmosphericCO2Concentration);
+    } else {
+      // use reference evapotranspiration from climate file
       vc_ReferenceEvapotranspiration_na = vw_ReferenceEvapotranspiration;
     }
-    auto [vc_Transpiration_na, vc_TranspirationDeficit_na] =  fc_CropWaterUptake_notApplied(soilColumn.vm_GroundwaterTableLayer, vc_ReferenceEvapotranspiration_na, vc_InterceptionStorage_na, 6.5);  // pair<std::vector<double>, double> na = ...; auto vc_Transpiration_na = na.first; auto vc_TranspirationDeficit_na = na.second;
+    auto [vc_Transpiration_na, vc_TranspirationDeficit_na] =  fc_CropWaterUptake_notApplied(soilColumn.vm_GroundwaterTableLayer,
+                                                                                            vc_ReferenceEvapotranspiration_na,
+                                                                                            vc_InterceptionStorage_d, 6.5);
     // std::cerr << "---- " << currentDate.toIsoDateString() << " daily vs hourlyagg ---- \n"
     //           << "RefET: " << vc_ReferenceEvapotranspiration_na << "     " << vc_ReferenceEvapotranspiration << std::endl
     //           << "TranspDef: " << vc_TranspirationDeficit_na  << "     " << vc_TranspirationDeficit << std::endl;
     // for (size_t i=0; i < vc_Transpiration_na.size(); ++i) std:: cerr << "Transp. Layer" << i << ": " << vc_Transpiration_na.at(i) << "     " << vc_Transpiration.at(i) << std::endl;
+    // std::cerr << currentDate.toIsoDateString() << "," << vc_ReferenceEvapotranspiration_na << "," << vc_ReferenceEvapotranspiration << std::endl;
     // */
 
     fc_HeatStressImpact(vw_MaxAirTemperature,
@@ -2414,6 +2531,8 @@ CropModule::A_rubisco_results CropModule::A_rubisco(double vw_MeanAirTemperature
  * @param vc_ClearDayRadiation
  * @param vc_EffectiveDayLength
  * @param vc_OvercastDayRadiation
+ * 
+ * @param vw_WindSpeed only used in hourly overclocked photosynthesis code (when active) to estimate hourly windspeed if no hourly data is provided
  *
  * @author Claas Nendel
  */
@@ -2422,7 +2541,8 @@ void CropModule::fc_CropPhotosynthesis(double vw_MeanAirTemperature,
                                        double vw_MinAirTemperature,
                                        double vw_AtmosphericCO2Concentration,
                                        double vw_AtmosphericO3Concentration,
-                                       Date currentDate) {
+                                       Date currentDate,
+                                       double vw_WindSpeed) {
   using namespace Voc;
 
   double vc_AssimilationRateReference = 0.0;
@@ -3107,7 +3227,7 @@ void CropModule::fc_CropPhotosynthesis(double vw_MeanAirTemperature,
 
       double vw_ReferenceEvapotranspiration_h = -1.0;
 
-      auto sp = subdaily_meteodata(currentDate, vw_MinAirTemperature, vw_MaxAirTemperature);
+      auto sp = subdaily_meteodata(currentDate, vw_MinAirTemperature, vw_MaxAirTemperature, vw_WindSpeed);
 
       for (int h = 0; h < 24; ++h) {  // hourly overclocked loop
         bool is_daytime = ((h >= sp.sunriseH) && (h < sp.sunsetH)) ? true : false;
@@ -3359,10 +3479,37 @@ void CropModule::fc_CropPhotosynthesis(double vw_MeanAirTemperature,
   if (vw_MeanAirTemperature < pc_MinimumTemperatureForAssimilation) {
     vc_GrossPhotosynthesis = vc_NetMaintenanceRespiration;
   }
+
+
+
+
+std::cerr
+    << "daily original,"
+    << currentDate.toIsoDateString() << ","
+    << vc_GrossCO2AssimilationReference << ","
+    << vc_GrossPhotosynthesisReference_mol << ","
+    << vc_ReferenceEvapotranspiration << ","
+    << vc_GrossAssimilates << ","
+    << vc_Assimilates
+    << '\n';
+
+
+
+
 }
 
-
-CropModule::subdaily_data CropModule::subdaily_meteodata(const Tools::Date &currentDate, double vw_MinAirTemperature, double vw_MaxAirTemperature)
+/**
+ * @brief read in or temporally disaggregate meteorological data to subdaily resolution
+ * 
+ * only hourly resolution implemented so far
+ * 
+ * @param currentDate          
+ * @param vw_MinAirTemperature used for temperature disaggregation
+ * @param vw_MaxAirTemperature used for temperature disaggregation
+ * @param vw_WindSpeed         used if no higher resolution wind speed is read in
+ * @return CropModule::subdaily_data 
+ */
+CropModule::subdaily_data CropModule::subdaily_meteodata(const Tools::Date &currentDate, double vw_MinAirTemperature, double vw_MaxAirTemperature, double vw_WindSpeed)
 {
 
   CropModule::subdaily_data sd;
@@ -3389,13 +3536,32 @@ CropModule::subdaily_data CropModule::subdaily_meteodata(const Tools::Date &curr
 
       // read hourly data from json object dictionary __hourly_in_data__
       auto hourly_data_in = cropPs.__hourly_in_data__.at(current_isodatetime).array_items();
-      double airT_h = hourly_data_in.at(0).number_value();
-      double iDif_h =hourly_data_in.at(1).number_value();
-      double iDir_h = hourly_data_in.at(2).number_value();
-      sd.hourlyAirT.push_back(airT_h);
-      sd.hourlyIdif.push_back(iDif_h);
-      sd.hourlyIdir.push_back(iDir_h);
-      hgr = iDif_h + iDir_h;            // global radiation for th ehour
+      size_t varnum = hourly_data_in.size();
+      switch (varnum) {
+        case 6:     // hourly precipitation
+          sd.hourlyPrecip.push_back(hourly_data_in.at(5).number_value());
+          [[fallthrough]];
+        case 5:     // hourly windspeed
+          sd.hourlyWindSpeed.push_back(hourly_data_in.at(4).number_value());
+          [[fallthrough]];
+        case 4:     // hourly relative humidity
+          sd.hourlyRH.push_back(hourly_data_in.at(3).number_value());
+          [[fallthrough]];
+        case 3: {   // hourly diffuse and direct irradiances
+          sd.hourlyAirT.push_back(hourly_data_in.at(0).number_value());
+        //   [[fallthrough]];
+        // }
+        // case 2: {
+          double iDif_h = hourly_data_in.at(1).number_value();
+          sd.hourlyIdif.push_back(iDif_h);
+          double iDir_h = hourly_data_in.at(2).number_value();
+          sd.hourlyIdir.push_back(iDir_h);
+          hgr = iDif_h + iDir_h;            // global radiation for the hour
+          break;
+        }
+        default:
+          throw std::runtime_error("Invalid hourly data format: expected 3-6 values");
+      }
 
       // calculate solar position based on actual time (isodate string)
       double vs_Longitude = cropPs.__longitude__;
@@ -3426,16 +3592,22 @@ CropModule::subdaily_data CropModule::subdaily_meteodata(const Tools::Date &curr
               ) ? h : sunsetH;
     sd.hourlySolarEl.push_back(sun_el);
   }
+  assert(sd.hourlyGlobrad.size() == 24);
+  assert(sd.hourlyExtrarad.size() == 24);
+  assert(sd.hourlySolarEl.size() == 24);
 
   if (cropPs.__hourly_in_data__.empty()) {
     for (int h = 0; h < 24; ++h) {
       sd.hourlyAirT.push_back(hourlyT(vw_MinAirTemperature, vw_MaxAirTemperature, h, sunriseH));
-    }
-  } else {
-    if (sd.hourlyAirT.size() != 24) {
-      throw runtime_error("Expected 24 hourly temperature values in hourly input data!");
+      sd.hourlyRH.push_back(-1.0);
+      sd.hourlyWindSpeed.push_back(vw_WindSpeed);
+      sd.hourlyPrecip.push_back(-1.0);
     }
   }
+  assert(sd.hourlyAirT.size() == 24);
+  assert(sd.hourlyRH.size() == 24);
+  assert(sd.hourlyWindSpeed.size() == 24);
+  assert(sd.hourlyPrecip.size() == 24);
 
   sd.sunriseH = sunriseH;
   sd.sunsetH = sunsetH;
@@ -4698,6 +4870,7 @@ double CropModule::fc_ReferenceEvapotranspiration(double vw_MaxAirTemperature,
   double vc_RelativeShortwaveRadiation = vc_ClearSkyShortwaveRadiation > 0
                                            ? vc_GlobalRadiation / vc_ClearSkyShortwaveRadiation
                                            : 0;
+  vc_RelativeShortwaveRadiation = bound(0.3, vc_RelativeShortwaveRadiation, 1.0); // FS: ~ 0.3 is total cloud cover, and anything below that could lead to physically implausible longwave emission in vw_NetRadiation caclulation
 
   double vc_NetShortwaveRadiation = (1.0 - pc_ReferenceAlbedo) * vc_GlobalRadiation;
 
@@ -4776,8 +4949,8 @@ double CropModule::fc_ReferenceEvapotranspiration_h(double vw_DewAirTemperature,
   double vw_NetRadiation_h;                 //[MJ m-2]
 
   const CropModuleParameters &user_crops = cropPs;
-  double pc_SaturationBeta = user_crops.pc_SaturationBeta;                    // Original: Yu et al. 2001; beta = 3.5
-  double pc_StomataConductanceAlpha = user_crops.pc_StomataConductanceAlpha;  // Original: Yu et al. 2001; alpha = 0.06
+  double pc_SaturationBeta = user_crops.pc_SaturationBeta;                    // Original: Yu et al. 2001; beta = 3.5; FS: this seems to be no longer true, since general crop.json uses "SaturationBeta": 2.5
+  double pc_StomataConductanceAlpha = user_crops.pc_StomataConductanceAlpha;  // Original: Yu et al. 2001; alpha = 0.06; FS: this seems to be no longer true, since general crop.json uses "StomataConductanceAlpha": 40
   double pc_ReferenceAlbedo = user_crops.pc_ReferenceAlbedo;                  // FAO Green gras reference albedo from Allen et al. (1998)
 
   // Calculation of atmospheric pressure
@@ -4817,8 +4990,9 @@ double CropModule::fc_ReferenceEvapotranspiration_h(double vw_DewAirTemperature,
   // Calculation of the aerodynamic resistance
   vc_AerodynamicResistance_h = 208.0 / vc_WindSpeed_h_2m;   // FS: 208.0 is the param assumed by FAO-56 for the reference crop!
 
+  double MaxStomataResistance = 288.0; // 999999.9; // [s m-1]  // FS: MONICA default 999999.9 leads to unrealistic base resistance at night for the hourly version -> use 288.0 = 200.0 * 1.44, since 200 was as suggested for nighttime bulk surface resistance by Allen et al. (2006) [https://doi.org/10.1016/j.agwat.2005.03.007]
   if (vc_GrossPhotosynthesisReference_mol_h <= 0.0) {
-    vc_StomataResistance_h = 288.0; // 999999.9; // [s m-1]         // FS: MONICA default 999999.9 leads to unrealistic base resistance at night for the hourly version -> use 288.0 = 200.0 * 1.44, since 200 was as suggested for bulk surface resistance by Allen et al. (2006) [https://doi.org/10.1016/j.agwat.2005.03.007]
+    vc_StomataResistance_h = MaxStomataResistance;
   } else {
 
     // crop stomata resistance according to Yu et al. 2001 (FS: which Yu et al. 2001 publication?
@@ -4838,6 +5012,7 @@ double CropModule::fc_ReferenceEvapotranspiration_h(double vw_DewAirTemperature,
           (vw_AtmosphericCO2Concentration * (1.0 + vc_SaturationDeficit / pc_SaturationBeta)) /
           (pc_StomataConductanceAlpha * vc_GrossPhotosynthesisReference_mol_h);
     }
+    vc_StomataResistance_h = min(vc_StomataResistance_h, MaxStomataResistance); // cap at MaxStomataResistance ( = nighttime resistance)
   }
 
   vc_SurfaceResistance_h = vc_StomataResistance_h / 1.44; // FS: FAO-56 assumes 70 [s m-1] surface resistance for the reference crop, which is 100 / 1.44 [s m-1], so the
@@ -4869,7 +5044,7 @@ double CropModule::fc_ReferenceEvapotranspiration_h(double vw_DewAirTemperature,
     vc_ClearSkyShortwaveRadiation_h = (0.75 + 0.00002 * vs_HeightNN) * vc_ExtraterrestrialRadiation_3h_b4_sunseth;
     vc_RelativeShortwaveRadiation_h = (vc_ClearSkyShortwaveRadiation_h > 0.0) ? vc_GlobalRadiation_3h_b4_sunseth / vc_ClearSkyShortwaveRadiation_h : 0.6; // approx. 0.4 to 0.6 during nighttime periods in humid and subhumid climates and 0.7 to 0.8 in arid and semiarid climates
   }
-  vc_RelativeShortwaveRadiation_h = bound(0.3, vc_RelativeShortwaveRadiation_h, 1.0);                       // ~ 0.3 is total cloud cover
+  vc_RelativeShortwaveRadiation_h = bound(0.3, vc_RelativeShortwaveRadiation_h, 1.0);                       // FS: ~ 0.3 is total cloud cover, and anything below that could lead to physically implausible longwave emission in vw_NetRadiation_h caclulation
 
   double vc_NetShortwaveRadiation_h = (1.0 - pc_ReferenceAlbedo) * vc_GlobalRadiation_h;                    // FS: Similar question here: Should global radiation used here be affected by Agri-PV or not?
                                                                                                             // @ToDo FS: For Agri-PV, use reduced global radiation, since shading leads to less shortwave radiation and therefore less ET.
@@ -4886,6 +5061,10 @@ double CropModule::fc_ReferenceEvapotranspiration_h(double vw_DewAirTemperature,
 
   double soilHeatflux = calc_soilHeatflux ? ((is_daytime) ? 0.1 * vw_NetRadiation_h : 0.5 * vw_NetRadiation_h) : 0.0;  // (eq.45 and eq.46)
 
+
+  // std::cerr << vc_GlobalRadiation_h << "," << vc_ClearSkyShortwaveRadiation_h << "," << vc_RelativeShortwaveRadiation_h << "," << vc_NetShortwaveRadiation_h << "," << vw_NetRadiation_h << "," << soilHeatflux << std::endl;
+
+
   // Calculation of reference evapotranspiration
   // Penman-Monteith-Method FAO (eq.53)
   vc_ReferenceEvapotranspiration_h = ((0.408 * vc_SaturatedVapourPressureSlope_h * (vw_NetRadiation_h-soilHeatflux)) +
@@ -4894,6 +5073,30 @@ double CropModule::fc_ReferenceEvapotranspiration_h(double vw_DewAirTemperature,
                                                                                     vc_PsycrometerConstant * (1.0 +
                                                                                                               (vc_SurfaceResistance_h /
                                                                                                                vc_AerodynamicResistance_h)));
+
+
+
+                                                                // FS DEBUG LAI
+                                                                const double radiationTerm_h = 0.408 * vc_SaturatedVapourPressureSlope_h * (vw_NetRadiation_h-soilHeatflux);
+                                                                const double aerodynamicTerm_h = vc_PsycrometerConstant * (37.0 / (vw_MeanAirTemperature_h + 273.0)) * vc_WindSpeed_h_2m * vc_SaturationDeficit;
+                                                                const double denominator_h = vc_SaturatedVapourPressureSlope_h + vc_PsycrometerConstant * (1.0 + (vc_SurfaceResistance_h / vc_AerodynamicResistance_h));
+                                                                const double rawET_h = (radiationTerm_h + aerodynamicTerm_h) / denominator_h;
+                                                                // std::cerr << "hourly refET debug: "
+                                                                //     << vw_MeanAirTemperature_h << ","
+                                                                //     << vc_SaturatedVapourPressure_h << ","
+                                                                //     << vc_VapourPressure_h << ","
+                                                                //     << vc_SaturationDeficit << ","
+                                                                //     << vc_SaturatedVapourPressureSlope_h << ","
+                                                                //     << vc_WindSpeed_h_2m << ","
+                                                                //     << vc_SurfaceResistance_h << ","
+                                                                //     << vc_AerodynamicResistance_h << ","
+                                                                //     << radiationTerm_h << ","
+                                                                //     << aerodynamicTerm_h << ","
+                                                                //     << denominator_h << ","
+                                                                //     << rawET_h
+                                                                //     << '\n';
+
+
 
   if (vc_ReferenceEvapotranspiration_h < 0.0) {
     vc_ReferenceEvapotranspiration_h = 0.0;
@@ -4926,12 +5129,12 @@ double CropModule::fc_ReferenceEvapotranspiration_h(double vw_DewAirTemperature,
  * @return Reference evapotranspiration
  */
 double CropModule::fc_ReferenceEvapotranspiration_notApplied(double vw_MaxAirTemperature,
-                                                  double vw_MinAirTemperature,
-                                                  double vw_RelativeHumidity,
-                                                  double vw_MeanAirTemperature,
-                                                  double vw_WindSpeed,
-                                                  double vw_WindSpeedHeight,
-                                                  double vw_AtmosphericCO2Concentration) {
+                                                             double vw_MinAirTemperature,
+                                                             double vw_RelativeHumidity,
+                                                             double vw_MeanAirTemperature,
+                                                             double vw_WindSpeed,
+                                                             double vw_WindSpeedHeight,
+                                                             double vw_AtmosphericCO2Concentration) {
   double vc_AtmosphericPressure; //[kPA]
   // double vc_PsycrometerConstant; //[kPA °C-1]
   double vc_SaturatedVapourPressureMax; //[kPA]
@@ -5016,6 +5219,7 @@ double CropModule::fc_ReferenceEvapotranspiration_notApplied(double vw_MaxAirTem
   double vc_RelativeShortwaveRadiation = vc_ClearSkyShortwaveRadiation > 0
                                            ? vc_GlobalRadiation / vc_ClearSkyShortwaveRadiation
                                            : 0;
+  vc_RelativeShortwaveRadiation = bound(0.3, vc_RelativeShortwaveRadiation, 1.0); // FS: ~ 0.3 is total cloud cover, and anything below that could lead to physically implausible longwave emission in vw_NetRadiation caclulation
 
   double vc_NetShortwaveRadiation = (1.0 - pc_ReferenceAlbedo) * vc_GlobalRadiation;
 
@@ -5025,6 +5229,11 @@ double CropModule::fc_ReferenceEvapotranspiration_notApplied(double vw_MaxAirTem
                                                 (1.35 * vc_RelativeShortwaveRadiation - 0.35) *
                                                 (0.34 - 0.14 * sqrt(vc_VapourPressure)));
 
+
+
+  // std::cerr << vc_GlobalRadiation << "," << vc_ClearSkyShortwaveRadiation << "," << vc_RelativeShortwaveRadiation << "," << vc_NetShortwaveRadiation << "," << vw_NetRadiation << std::endl;
+
+
   // Calculation of reference evapotranspiration
   // Penman-Monteith-Method FAO
   vc_ReferenceEvapotranspiration = ((0.408 * vc_SaturatedVapourPressureSlope * vw_NetRadiation) +
@@ -5033,6 +5242,28 @@ double CropModule::fc_ReferenceEvapotranspiration_notApplied(double vw_MaxAirTem
                                      vc_PsycrometerConstant * (1.0 +
                                                                (vc_SurfaceResistance /
                                                                 vc_AerodynamicResistance)));
+
+
+                                                                // FS DEBUG LAI
+                                                                const double radiationTerm = 0.408 * vc_SaturatedVapourPressureSlope * vw_NetRadiation;
+                                                                const double aerodynamicTerm = vc_PsycrometerConstant * (900.0 / (vw_MeanAirTemperature + 273.0)) * vc_WindSpeed_2m * vc_SaturationDeficit;
+                                                                const double denominator = vc_SaturatedVapourPressureSlope + vc_PsycrometerConstant * (1.0 + (vc_SurfaceResistance / vc_AerodynamicResistance));
+                                                                const double rawET = (radiationTerm + aerodynamicTerm) / denominator;
+                                                                // std::cerr << "daily refET debug: "
+                                                                //     << vw_MeanAirTemperature << ","
+                                                                //     << vc_SaturatedVapourPressure << ","
+                                                                //     << vc_VapourPressure << ","
+                                                                //     << vc_SaturationDeficit << ","
+                                                                //     << vc_SaturatedVapourPressureSlope << ","
+                                                                //     << vc_WindSpeed_2m << ","
+                                                                //     << vc_SurfaceResistance << ","
+                                                                //     << vc_AerodynamicResistance << ","
+                                                                //     << radiationTerm << ","
+                                                                //     << aerodynamicTerm << ","
+                                                                //     << denominator << ","
+                                                                //     << rawET
+                                                                //     << '\n';
+
 
   if (vc_ReferenceEvapotranspiration < 0.0) {
     vc_ReferenceEvapotranspiration = 0.0;
@@ -5281,16 +5512,18 @@ void CropModule::fc_CropWaterUptake(size_t vc_GroundwaterTable,
 
 
 /**
- * @brief daily interception calculation
+ * @brief interception calculation
  * 
  * @param vw_GrossPrecipitation 
- * @param (modified internal state in place) vc_InterceptionStorage
- * @param (modified internal state in place) vc_NetPrecipitation
+ * @param vc_InterceptionStorage
+ * @param vc_NetPrecipitation
+ * 
+ * @return {vc_InterceptionStorage, vc_NetPrecipitation}
  * 
  * @see CropModule::fc_CropWaterUptake
  * @see CropModule::fc_CropWaterUptake_h
  */
-void CropModule::fc_CropInterception(double vw_GrossPrecipitation) {
+pair<double, double> CropModule::fc_CropInterception(double vw_GrossPrecipitation, double vc_InterceptionStorage, double vc_NetPrecipitation) {
 
   // ################
   // # Interception #
@@ -5320,6 +5553,8 @@ void CropModule::fc_CropInterception(double vw_GrossPrecipitation) {
 
   // add intercepted precipitation to the virtual interception water storage
   vc_InterceptionStorage = vc_InterceptionStorageOld + vc_Interception;
+
+  return {vc_InterceptionStorage, vc_NetPrecipitation};
 }
 
 /**
@@ -5349,6 +5584,14 @@ void CropModule::fc_CropWaterUptake_h(size_t vc_GroundwaterTable,
   double vc_CropWaterUptakeFromGroundwater = 0.0;   // [mm]
   double vc_TotalRootEffectivity = 0.0;             // [m]
   vc_ActualTranspirationDeficit_h = 0.0;            // [mm]
+
+  // FS: do not reset in between hours if this is the variable to be used in soilmoisture.cpp
+  //     maybe only restet for each new day?
+  // for (size_t i_Layer = 0; i_Layer < nols; i_Layer++) {
+  //   vc_Transpiration[i_Layer] = 0.0; // old TP [mm]
+  //   vc_TranspirationRedux[i_Layer] = 0.0; // old TRRED []
+  //   vc_RootEffectivity[i_Layer] = 0.0; // old WUEFF [?]
+  // }
 
   // ################
   // # Interception #
@@ -5384,7 +5627,11 @@ void CropModule::fc_CropWaterUptake_h(size_t vc_GroundwaterTable,
     vc_EvaporatedFromIntercept_h = 0.0;
   }
 
-  // FS: altered CropModule attrs here: vc_PotentialTranspiration, vc_TranspirationRedux, vc_RootEffectivity, vc_PotentialTranspirationDeficit
+  // FS: altered CropModule attrs here: vc_Transpiration, vc_PotentialTranspiration, vc_TranspirationRedux, vc_RootEffectivity, vc_PotentialTranspirationDeficit
+  //     vc_Transpiration has to be updated (either hourly, or at the end of the day, so soilmoisture.cpp can update vm_SoilMoisture for all layers)!
+  //     Check if vc_TranspirationRedux can be local here, since it seems to usually get reset before anyways -> check where else it gets used!
+  //     ...
+  //     WHat happens to ground water table, if we take out water hourly? Can we neglect this subdaily dynamic?
 
   // if the plant has matured, no transpiration occurs!
   if (vc_DevelopmentalStage < vc_FinalDevelopmentalStage) {
@@ -5395,6 +5642,8 @@ void CropModule::fc_CropWaterUptake_h(size_t vc_GroundwaterTable,
     for (size_t i_Layer = 0; i_Layer < vc_RootingZone; i_Layer++) {
       double vc_AvailableWater_h = soilColumn[i_Layer].vs_FieldCapacity() - soilColumn[i_Layer].vs_PermanentWiltingPoint();
       double vc_AvailableWaterPercentage_h = (soilColumn[i_Layer].get_Vs_SoilMoisture_m3() - soilColumn[i_Layer].vs_PermanentWiltingPoint()) / vc_AvailableWater_h;
+      // FS: Either update soil column after each hour, or somehow use an hourly updated local copy of soil column here instead?
+      // ...
       if (vc_AvailableWaterPercentage_h < 0.0) {
         vc_AvailableWaterPercentage_h = 0.0;
       }
@@ -5450,9 +5699,15 @@ void CropModule::fc_CropWaterUptake_h(size_t vc_GroundwaterTable,
 
     for (size_t i_Layer = 0; i_Layer < nols; i_Layer++) {
       if (i_Layer > min(vc_RootingZone, vc_GroundwaterTable + 1)) {
-        vc_Transpiration[i_Layer] = 0.0; //[mm]
+        // vc_Transpiration[i_Layer] = 0.0; //[mm]
+        vc_Transpiration[i_Layer] += 0.0; //[mm]
       } else {
-        vc_Transpiration[i_Layer] = vc_TotalRootEffectivity != 0.0
+        // vc_Transpiration[i_Layer] = vc_TotalRootEffectivity != 0.0
+        //                             ? vc_PotentialTranspiration_h *
+        //                               ((vc_RootEffectivity[i_Layer] * vc_RootDensity[i_Layer]) /
+        //                                vc_TotalRootEffectivity) * vc_OxygenDeficit_h //MP: why is this not changing anything? (I think it would only change something for too dry conditions).
+        //                             : 0;
+        vc_Transpiration[i_Layer] += vc_TotalRootEffectivity != 0.0
                                     ? vc_PotentialTranspiration_h *
                                       ((vc_RootEffectivity[i_Layer] * vc_RootDensity[i_Layer]) /
                                        vc_TotalRootEffectivity) * vc_OxygenDeficit_h //MP: why is this not changing anything? (I think it would only change something for too dry conditions).

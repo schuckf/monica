@@ -229,11 +229,14 @@ public:
     std::vector<double> hourlyAirT;
     std::vector<double> hourlyIdif;
     std::vector<double> hourlyIdir;
+    std::vector<double> hourlyRH;
+    std::vector<double> hourlyWindSpeed;
+    std::vector<double> hourlyPrecip;
     int sunriseH;
     int sunsetH;
   };
 
-  subdaily_data subdaily_meteodata(const Tools::Date &currentDate, double vw_MinAirTemperature, double vw_MaxAirTemperature);
+  subdaily_data subdaily_meteodata(const Tools::Date &currentDate, double vw_MinAirTemperature, double vw_MaxAirTemperature, double vw_WindSpeed);
 
   struct GP_results {
     double A;       // canopy gross photosynthesis for the whole canopy
@@ -257,7 +260,8 @@ public:
                              double vw_MinAirTemperature,
                              double vw_AtmosphericCO2Concentration,
                              double vw_AtmosphericO3Concentration,
-                             Tools::Date currentDate);
+                             Tools::Date currentDate,
+                             double vw_WindSpeed);
 
   void fc_HeatStressImpact(double vw_MeanAirTemperature,
                            double vw_MaxAirTemperature);
@@ -303,7 +307,7 @@ public:
                           double vc_CurrentTotalTemperatureSum,
                           double vc_TotalTemperatureSum);
 
-  void fc_CropInterception(double vw_GrossPrecipitation);
+  std::pair<double, double> fc_CropInterception(double vw_GrossPrecipitation, double vc_InterceptionStorage, double vc_NetPrecipitation);
 
   void fc_CropWaterUptake_h(size_t vm_GroundwaterTable,
                             double vc_ReferenceEvapotranspiration_h); //, double vc_OxygenDeficit_h);
