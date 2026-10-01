@@ -1521,15 +1521,15 @@ void CropModule::step(double vw_MeanAirTemperature,
 
 
 
-std::cerr
-    << "hourly aggregated,"
-    << currentDate.toIsoDateString() << ","
-    << vc_GrossCO2AssimilationReference << ","
-    << vc_GrossPhotosynthesisReference_mol << ","
-    << vc_ReferenceEvapotranspiration << ","
-    << vc_GrossAssimilates << ","
-    << vc_Assimilates
-    << '\n';
+// std::cerr
+//     << "hourly aggregated,"
+//     << currentDate.toIsoDateString() << ","
+//     << vc_GrossCO2AssimilationReference << ","
+//     << vc_GrossPhotosynthesisReference_mol << ","
+//     << vc_ReferenceEvapotranspiration << ","
+//     << vc_GrossAssimilates << ","
+//     << vc_Assimilates
+//     << '\n';
 
 
 
@@ -3516,15 +3516,15 @@ void CropModule::fc_CropPhotosynthesis(double vw_MeanAirTemperature,
 
 
 
-std::cerr
-    << "daily original,"
-    << currentDate.toIsoDateString() << ","
-    << vc_GrossCO2AssimilationReference << ","
-    << vc_GrossPhotosynthesisReference_mol << ","
-    << vc_ReferenceEvapotranspiration << ","
-    << vc_GrossAssimilates << ","
-    << vc_Assimilates
-    << '\n';
+// std::cerr
+//     << "daily original,"
+//     << currentDate.toIsoDateString() << ","
+//     << vc_GrossCO2AssimilationReference << ","
+//     << vc_GrossPhotosynthesisReference_mol << ","
+//     << vc_ReferenceEvapotranspiration << ","
+//     << vc_GrossAssimilates << ","
+//     << vc_Assimilates
+//     << '\n';
 
 
 
@@ -5655,12 +5655,9 @@ void CropModule::fc_CropWaterUptake_h(size_t vc_GroundwaterTable,
   double vc_TotalRootEffectivity_h = 0.0;             // [m]
   vc_ActualTranspirationDeficit_h = 0.0;            // [mm]
   vc_TranspirationDeficit_h = 1.0; // FS: see comment about  no else block here  and remove this if the behaviout potentially re-using previous values is intended
-
-  for (size_t i_Layer = 0; i_Layer < nols; i_Layer++) {
-    vc_Transpiration_h[i_Layer] = 0.0; // old TP [mm]
-    vc_TranspirationRedux_h[i_Layer] = 0.0; // old TRRED []
-    vc_RootEffectivity_h[i_Layer] = 0.0; // old WUEFF [?]
-  }
+  vc_Transpiration_h.assign(nols, 0.0);
+  vc_TranspirationRedux_h.assign(nols, 0.0);
+  vc_RootEffectivity_h.assign(nols, 0.0);
   vc_EvaporatedFromIntercept_h = 0.0;
   vc_RemainingEvapotranspiration_h = 0.0;
 

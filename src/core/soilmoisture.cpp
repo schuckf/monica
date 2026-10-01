@@ -1105,11 +1105,11 @@ void SoilMoisture::fm_Evapotranspiration(double vc_PercentageSoilCoverage, doubl
 
 
 
-std::cerr
-<< "SOIL MOISTURE B4 CROP BRANCH,"
-<< " stage=" << vc_DevelopmentalStage
- << ", cropGrowth=" << (monica.cropGrowth() != nullptr)
-    << "\n";
+// std::cerr
+// << "SOIL MOISTURE B4 CROP BRANCH,"
+// << " stage=" << vc_DevelopmentalStage
+//  << ", cropGrowth=" << (monica.cropGrowth() != nullptr)
+//     << "\n";
 
 
 
@@ -1118,11 +1118,11 @@ std::cerr
 
 
 
-std::cerr
-<< "SOIL MOISTURE CROP BRANCH ENTERED,"
-<< " stage=" << vc_DevelopmentalStage
- << ", cropGrowth=" << (monica.cropGrowth() != nullptr)
-    << "\n";
+// std::cerr
+// << "SOIL MOISTURE CROP BRANCH ENTERED,"
+// << " stage=" << vc_DevelopmentalStage
+//  << ", cropGrowth=" << (monica.cropGrowth() != nullptr)
+//     << "\n";
 
 
 
@@ -1155,7 +1155,7 @@ std::cerr
           vm_Transpiration[i_Layer] = monica.cropGrowth()->get_Transpiration(i_Layer);                        // FS test: this reads transpiration from the crop module
 
           //std::cout << setprecision(11) << "vm_Transpiration[i_Layer]: " << i_Layer << ", " << vm_Transpiration[i_Layer] << std::endl;
-          std::cerr << setprecision(11) << "vm_Transpiration[i_Layer]: " << i_Layer << ", " << vm_Transpiration[i_Layer] << std::endl;
+          // std::cerr << setprecision(11) << "vm_Transpiration[i_Layer]: " << i_Layer << ", " << vm_Transpiration[i_Layer] << std::endl;
 
           // Transpiration is capped in case potential ET after surface
           // and interception evaporation has occurred on same day
