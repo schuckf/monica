@@ -1073,9 +1073,6 @@ void CropModule::step(double vw_MeanAirTemperature,
 
     vc_SoilCoverage = fc_SoilCoverage();
 
-    // daily interception storage
-    auto [vc_InterceptionStorage_d, vc_NetPrecipitation_d] = fc_CropInterception(vw_GrossPrecipitation, vc_InterceptionStorage, vc_NetPrecipitation);         // FS: ideally, the exact hour of precipitation should not matter too much, since the soil hopefully dampens this
-
     // hourly overclocked canopy photosynthesis
 #pragma region hourly overclocked
     if (cropPs.__enable_hourly_photosynthesis__ == 1) {
@@ -1106,6 +1103,19 @@ void CropModule::step(double vw_MeanAirTemperature,
 
       auto sp = subdaily_meteodata(currentDate, vw_MinAirTemperature, vw_MaxAirTemperature, vw_WindSpeed);
       double vw_ReferenceEvapotranspiration_h = -1.0; // since this is not read in hourly
+      const bool hourlyPrecipAvailable = sp.hourlyPrecip.size() == 24 && std::all_of(sp.hourlyPrecip.begin(), sp.hourlyPrecip.end(), [](double x) { return x > -1.0; });
+      const int daily_precip_application_hour = 0;  // FS: ideally, the exact hour of precipitation should not matter too much, since the soil hopefully dampens this most of the time
+      assert(daily_precip_application_hour >= 0 && daily_precip_application_hour < 24);
+
+      update_extracted_soilColumn_params_from_daily();
+
+      vc_InterceptionStorage_remaining = vc_InterceptionStorage;
+      size_t nols = soilColumn.vs_NumberOfLayers();
+      vc_Transpiration.assign(nols, 0.0);
+      vc_NetPrecipitation = 0.0;
+      vc_EvaporatedFromIntercept = 0.0;
+
+      double vc_RemainingEvapotranspiration_d = 0.0;
 
       double vc_GrossCO2Assimilation = 0.0;
       double vc_GrossCO2AssimilationReference = 0.0;
@@ -1215,7 +1225,7 @@ void CropModule::step(double vw_MeanAirTemperature,
                                                                                           (leafT -  // FS: for now, this is air temperature; maybe use canopy temperature or use organ-specific temperature and put this in the for (int i_Organ = 0; i_Organ < pc_NumberOfOrgans; i_Organ++) loop as well?
                                                                                            cropPs.pc_MaintenanceRespirationParameter2))) / 12.0;  // @todo: [g m-2] --> [kg ha-1]
 
-          double vc_MaintenanceRespirationAS_h = vc_MaintenanceRespiration_h; // [kg CH2O ha-1]
+          vc_MaintenanceRespirationAS_h = vc_MaintenanceRespiration_h; // [kg CH2O ha-1]
           vc_Assimilates_h -= vc_MaintenanceRespiration_h; // [kg CH2O ha-1]
         }
 
@@ -1245,24 +1255,39 @@ void CropModule::step(double vw_MeanAirTemperature,
         }
 
 
-        if (sp.hourlyPrecip.at(h) > -1.0) { // hourly data available
-          auto [vc_InterceptionStorage_h, vc_NetPrecipitation_h] = fc_CropInterception(sp.hourlyPrecip.at(h), vc_InterceptionStorage, vc_NetPrecipitation);
-          vc_InterceptionStorage = vc_InterceptionStorage_h;
-          vc_NetPrecipitation = vc_NetPrecipitation_h;
-        } else {
-          if (h == 0) { // fill daily interception storage at one specific hour only
-            vc_InterceptionStorage = vc_InterceptionStorage_d;
-            vc_NetPrecipitation = vc_NetPrecipitation_d;
-          }
+        // if (hourlyPrecipAvailable) { // hourly data available
+        //   auto [vc_InterceptionStorage_h, vc_NetPrecipitation_h] = fc_CropInterception(sp.hourlyPrecip.at(h), vc_InterceptionStorage_remaining);
+        //   vc_InterceptionStorage_remaining = vc_InterceptionStorage_h;
+        //   vc_NetPrecipitation += vc_NetPrecipitation_h;
+        // } else {
+        //   if (h == daily_precip_application_hour) { // fill daily interception storage at one specific hour only
+        //     vc_InterceptionStorage_remaining = vc_InterceptionStorage_d;
+        //     vc_NetPrecipitation = vc_NetPrecipitation_d;
+        //   }
+        // }
+
+        double precip = 0.0;
+        if (hourlyPrecipAvailable) { // hourly data available
+          precip = sp.hourlyPrecip.at(h);
+         } else if (h == daily_precip_application_hour) {
+          precip = vw_GrossPrecipitation;
+         }
+
+        if (precip > 0.0) {
+          auto [vc_InterceptionStorage_updated, vc_NetPrecipitation_h] = fc_CropInterception(precip, vc_InterceptionStorage_remaining);
+          vc_InterceptionStorage_remaining = vc_InterceptionStorage_updated;
+          vc_NetPrecipitation += vc_NetPrecipitation_h;
         }
 
 
         fc_CropWaterUptake_h(soilColumn.vm_GroundwaterTableLayer, vc_ReferenceEvapotranspiration_h);  //, vc_OxygenDeficit_h);
                                                                                                       // FS: This should calculate vc_TranspirationDeficit_h, which affects
                                                                                                       //     CropModule::fc_CropDevelopmentalStage(...) and CropModule::fc_DroughtImpactOnFertility()
-
-
-
+        vc_EvaporatedFromIntercept += vc_EvaporatedFromIntercept_h;
+        vc_RemainingEvapotranspiration_d += vc_RemainingEvapotranspiration_h;
+        for (size_t i_Layer = 0; i_Layer < nols; ++i_Layer) {
+          vc_Transpiration[i_Layer] += vc_Transpiration_h[i_Layer];
+        }
 
 
 
@@ -1342,6 +1367,14 @@ void CropModule::step(double vw_MeanAirTemperature,
       //            to a function that does not perform hidden modifications to class or instance attrs. Instead, all inputs and outputs need to be provided and modification of CropModule attrs
       //            happens in a next step. That way, daily vc_TranspirationDeficit can be calculated without  modifying anything, and maybe additionally the code could even be applied to daily
       //            as well as hourly time steps?
+      vc_InterceptionStorage = vc_InterceptionStorage_remaining;
+      double vc_PotentialEvapotranspiration = vc_ReferenceEvapotranspiration * vc_KcFactor;
+      if (vc_PotentialEvapotranspiration > 6.5) {
+        vc_PotentialEvapotranspiration = 6.5;
+      }
+      // vc_RemainingEvapotranspiration =  vc_PotentialEvapotranspiration - vc_EvaporatedFromIntercept;
+      // double vc_RemainingEvapotranspiration_ =  max(0.0, vc_PotentialEvapotranspiration - vc_EvaporatedFromIntercept);  // FS: for comparison: including the hERMES daily 6.5mm cap for ETp
+      vc_RemainingEvapotranspiration = vc_RemainingEvapotranspiration_d;
       // */
 
 
@@ -1611,7 +1644,7 @@ std::cerr
     }
     auto [vc_Transpiration_na, vc_TranspirationDeficit_na] =  fc_CropWaterUptake_notApplied(soilColumn.vm_GroundwaterTableLayer,
                                                                                             vc_ReferenceEvapotranspiration_na,
-                                                                                            vc_InterceptionStorage_d, 6.5);
+                                                                                            vc_InterceptionStorage, 6.5);
     // std::cerr << "---- " << currentDate.toIsoDateString() << " daily vs hourlyagg ---- \n"
     //           << "RefET: " << vc_ReferenceEvapotranspiration_na << "     " << vc_ReferenceEvapotranspiration << std::endl
     //           << "TranspDef: " << vc_TranspirationDeficit_na  << "     " << vc_TranspirationDeficit << std::endl;
@@ -4870,7 +4903,10 @@ double CropModule::fc_ReferenceEvapotranspiration(double vw_MaxAirTemperature,
   double vc_RelativeShortwaveRadiation = vc_ClearSkyShortwaveRadiation > 0
                                            ? vc_GlobalRadiation / vc_ClearSkyShortwaveRadiation
                                            : 0;
+
+  // FS: potential bugfix:
   vc_RelativeShortwaveRadiation = bound(0.3, vc_RelativeShortwaveRadiation, 1.0); // FS: ~ 0.3 is total cloud cover, and anything below that could lead to physically implausible longwave emission in vw_NetRadiation caclulation
+                                                                                  //     Not sure yet if capping vc_RelativeShortwaveRadiation or directly capping the longwave emmission in vw_NetRadiation calculation below is the correct move here!
 
   double vc_NetShortwaveRadiation = (1.0 - pc_ReferenceAlbedo) * vc_GlobalRadiation;
 
@@ -5044,7 +5080,10 @@ double CropModule::fc_ReferenceEvapotranspiration_h(double vw_DewAirTemperature,
     vc_ClearSkyShortwaveRadiation_h = (0.75 + 0.00002 * vs_HeightNN) * vc_ExtraterrestrialRadiation_3h_b4_sunseth;
     vc_RelativeShortwaveRadiation_h = (vc_ClearSkyShortwaveRadiation_h > 0.0) ? vc_GlobalRadiation_3h_b4_sunseth / vc_ClearSkyShortwaveRadiation_h : 0.6; // approx. 0.4 to 0.6 during nighttime periods in humid and subhumid climates and 0.7 to 0.8 in arid and semiarid climates
   }
+
+  // FS: potential bugfix:
   vc_RelativeShortwaveRadiation_h = bound(0.3, vc_RelativeShortwaveRadiation_h, 1.0);                       // FS: ~ 0.3 is total cloud cover, and anything below that could lead to physically implausible longwave emission in vw_NetRadiation_h caclulation
+                                                                                                            //     Not sure yet if capping vc_RelativeShortwaveRadiation or directly capping the longwave emmission in vw_NetRadiation calculation below is the correct move here!
 
   double vc_NetShortwaveRadiation_h = (1.0 - pc_ReferenceAlbedo) * vc_GlobalRadiation_h;                    // FS: Similar question here: Should global radiation used here be affected by Agri-PV or not?
                                                                                                             // @ToDo FS: For Agri-PV, use reduced global radiation, since shading leads to less shortwave radiation and therefore less ET.
@@ -5219,7 +5258,10 @@ double CropModule::fc_ReferenceEvapotranspiration_notApplied(double vw_MaxAirTem
   double vc_RelativeShortwaveRadiation = vc_ClearSkyShortwaveRadiation > 0
                                            ? vc_GlobalRadiation / vc_ClearSkyShortwaveRadiation
                                            : 0;
+
+  // FS: potential bugfix:
   vc_RelativeShortwaveRadiation = bound(0.3, vc_RelativeShortwaveRadiation, 1.0); // FS: ~ 0.3 is total cloud cover, and anything below that could lead to physically implausible longwave emission in vw_NetRadiation caclulation
+                                                                                  //     Not sure yet if capping vc_RelativeShortwaveRadiation or directly capping the longwave emmission in vw_NetRadiation calculation below is the correct move here!
 
   double vc_NetShortwaveRadiation = (1.0 - pc_ReferenceAlbedo) * vc_GlobalRadiation;
 
@@ -5426,7 +5468,7 @@ void CropModule::fc_CropWaterUptake(size_t vc_GroundwaterTable,
     // [TRANSPLANT SHOCK] Water Uptake Limitation.
     // Limits the total active root water uptake effectivity proportional to the shock recovery efficiency factor.
     if (vc_TransplantEfficiency < 1.0) {
-      vc_TotalRootEffectivity *= vc_TransplantEfficiency;
+      vc_TotalRootEffectivity *= vc_TransplantEfficiency; // FS: potential bug: Is it intended that this increases vc_Transpiration[i_Layer], since dividing by a smaller vc_TotalRootEffectivity results in bigger vc_Transpiration[i_Layer]?
       vc_RemainingTotalRootEffectivity = vc_TotalRootEffectivity;
     }
 
@@ -5505,7 +5547,13 @@ void CropModule::fc_CropWaterUptake(size_t vc_GroundwaterTable,
     // std::cout << "vm_GroundwaterDistance: " << vm_GroundwaterDistance << std::endl;
     if (vm_GroundwaterDistance <= 1) vc_TranspirationDeficit = 1.0;
     if (!pc_WaterDeficitResponseOn) vc_TranspirationDeficit = 1.0;
+
+    vc_TranspirationDeficit = bound(0.0, vc_TranspirationDeficit, 1.0); // FS: additional safeguard
   }
+  // FS: There is no else block here    [if (vc_DevelopmentalStage < vc_FinalDevelopmentalStage) {...}]
+  //     If I understand the code above correctly, when all water comes from the interception storage and none from the soil before reaching final development stage, this leads to vc_RemainingEvapotranspiration = 0.0 -> vc_PotentialTranspiration = 0.0 -> vc_TranspirationDeficit = 1.0, which is correct.
+  //     What happens to the transpiration deficit (= drought stress factor applied multiplicatively to gross phtotsynthesis), when all water comes from the interception storage and none from the soil at final development stage? Will it just keep the value from the previous day? If so, is that intended (since keeping the factor the same for that entire period based on just one day could be dangerous)?
+  //     And does it even matter, or are conditions elswehere ensuring correct consistent behaviour?
 }
 
 
@@ -5523,7 +5571,9 @@ void CropModule::fc_CropWaterUptake(size_t vc_GroundwaterTable,
  * @see CropModule::fc_CropWaterUptake
  * @see CropModule::fc_CropWaterUptake_h
  */
-pair<double, double> CropModule::fc_CropInterception(double vw_GrossPrecipitation, double vc_InterceptionStorage, double vc_NetPrecipitation) {
+pair<double, double> CropModule::fc_CropInterception(double vw_GrossPrecipitation, double vc_InterceptionStorage) {
+
+  assert(vw_GrossPrecipitation >= 0.0); // if negative vw_GrossPrecipitation enters here somehow, this would skip  if (vw_GrossPrecipitation <= vc_Interception) {...}  and directly jump to  else {...}  resulting in negative vc_NetPrecipitation
 
   // ################
   // # Interception #
@@ -5544,6 +5594,7 @@ pair<double, double> CropModule::fc_CropInterception(double vw_GrossPrecipitatio
   }
 
   // Calculating net precipitation and adding to surface water
+  double vc_NetPrecipitation;
   if (vw_GrossPrecipitation <= vc_Interception) {
     vc_Interception = vw_GrossPrecipitation;
     vc_NetPrecipitation = 0.0;
@@ -5555,6 +5606,23 @@ pair<double, double> CropModule::fc_CropInterception(double vw_GrossPrecipitatio
   vc_InterceptionStorage = vc_InterceptionStorageOld + vc_Interception;
 
   return {vc_InterceptionStorage, vc_NetPrecipitation};
+}
+
+
+void CropModule::update_extracted_soilColumn_params_from_daily() {
+  size_t nols = soilColumn.vs_NumberOfLayers();
+
+  // initialize and reset at start of each day
+  scp_FieldCapacity.assign(nols, 0.0);
+  scp_PermanentWiltingPoint.assign(nols, 0.0);
+  vc_AvailableWaterPercentage_num_remaining.assign(nols, 0.0);
+
+  for (size_t i_Layer = 0; i_Layer < nols; ++i_Layer) {
+    scp_FieldCapacity[i_Layer] = soilColumn[i_Layer].vs_FieldCapacity();
+    scp_PermanentWiltingPoint[i_Layer] = soilColumn[i_Layer].vs_PermanentWiltingPoint();
+    const double SoilMoisture_m3_i_Layer = soilColumn[i_Layer].get_Vs_SoilMoisture_m3();          // FS: copy soil moistore of the day for each layer
+    vc_AvailableWaterPercentage_num_remaining[i_Layer] = max(0.0, SoilMoisture_m3_i_Layer - scp_PermanentWiltingPoint[i_Layer]); // at the start of the day, all of the available water percentage numerator is available
+  }
 }
 
 /**
@@ -5575,28 +5643,31 @@ void CropModule::fc_CropWaterUptake_h(size_t vc_GroundwaterTable,
                                       double vc_ReferenceEvapotranspiration_h) {  //, double vc_OxygenDeficit_h) {
   size_t nols = soilColumn.vs_NumberOfLayers();
   double layerThickness = soilColumn.vs_LayerThickness();
+
+  // FS: reset variables
   vc_PotentialTranspirationDeficit_h = 0.0;         // [mm]
   vc_PotentialTranspiration_h = 0.0;         // [mm]
   double vc_PotentialEvapotranspiration_h = 0.0;    // [mm]
   vc_TranspirationReduced_h = 0.0;                  // [mm]
   vc_ActualTranspiration_h = 0.0;                   // [mm]
-  double vc_RemainingTotalRootEffectivity = 0.0;    // [m]
-  double vc_CropWaterUptakeFromGroundwater = 0.0;   // [mm]
-  double vc_TotalRootEffectivity = 0.0;             // [m]
+  double vc_RemainingTotalRootEffectivity_h = 0.0;    // [m]
+  double vc_CropWaterUptakeFromGroundwater_h = 0.0;   // [mm]
+  double vc_TotalRootEffectivity_h = 0.0;             // [m]
   vc_ActualTranspirationDeficit_h = 0.0;            // [mm]
+  vc_TranspirationDeficit_h = 1.0; // FS: see comment about  no else block here  and remove this if the behaviout potentially re-using previous values is intended
 
-  // FS: do not reset in between hours if this is the variable to be used in soilmoisture.cpp
-  //     maybe only restet for each new day?
-  // for (size_t i_Layer = 0; i_Layer < nols; i_Layer++) {
-  //   vc_Transpiration[i_Layer] = 0.0; // old TP [mm]
-  //   vc_TranspirationRedux[i_Layer] = 0.0; // old TRRED []
-  //   vc_RootEffectivity[i_Layer] = 0.0; // old WUEFF [?]
-  // }
+  for (size_t i_Layer = 0; i_Layer < nols; i_Layer++) {
+    vc_Transpiration_h[i_Layer] = 0.0; // old TP [mm]
+    vc_TranspirationRedux_h[i_Layer] = 0.0; // old TRRED []
+    vc_RootEffectivity_h[i_Layer] = 0.0; // old WUEFF [?]
+  }
+  vc_EvaporatedFromIntercept_h = 0.0;
+  vc_RemainingEvapotranspiration_h = 0.0;
 
   // ################
   // # Interception #
   // ################
-  // FS: moved to CropModule::fc_CropInterception(double vw_GrossPrecipitation)
+  // FS: moved to CropModule::fc_CropInterception(...)
 
   // #################
   // # Transpiration #
@@ -5610,16 +5681,16 @@ void CropModule::fc_CropWaterUptake_h(size_t vc_GroundwaterTable,
 
   // FS: altered CropModule attrs here: vc_InterceptionStorage, vc_RemainingEvapotranspiration, vc_EvaporatedFromIntercept
 
-  double vc_RemainingEvapotranspiration_h = vc_PotentialEvapotranspiration_h; // [mm]
+  vc_RemainingEvapotranspiration_h = vc_PotentialEvapotranspiration_h; // [mm]
 
   // If crop holds intercepted water, first evaporation from crop surface
-  if (vc_InterceptionStorage > 0.0) {
-    if (vc_RemainingEvapotranspiration_h >= vc_InterceptionStorage) {
-      vc_RemainingEvapotranspiration_h -= vc_InterceptionStorage;
-      vc_EvaporatedFromIntercept_h = vc_InterceptionStorage;
-      vc_InterceptionStorage = 0.0;
+  if (vc_InterceptionStorage_remaining > 0.0) {
+    if (vc_RemainingEvapotranspiration_h >= vc_InterceptionStorage_remaining) {
+      vc_RemainingEvapotranspiration_h -= vc_InterceptionStorage_remaining;
+      vc_EvaporatedFromIntercept_h = vc_InterceptionStorage_remaining;
+      vc_InterceptionStorage_remaining = 0.0;
     } else {
-      vc_InterceptionStorage -= vc_RemainingEvapotranspiration_h;
+      vc_InterceptionStorage_remaining -= vc_RemainingEvapotranspiration_h;
       vc_EvaporatedFromIntercept_h = vc_RemainingEvapotranspiration_h;
       vc_RemainingEvapotranspiration_h = 0.0;
     }
@@ -5640,10 +5711,22 @@ void CropModule::fc_CropWaterUptake_h(size_t vc_GroundwaterTable,
     vc_PotentialTranspiration_h = vc_RemainingEvapotranspiration_h * vc_SoilCoverage; // [mm]
 
     for (size_t i_Layer = 0; i_Layer < vc_RootingZone; i_Layer++) {
-      double vc_AvailableWater_h = soilColumn[i_Layer].vs_FieldCapacity() - soilColumn[i_Layer].vs_PermanentWiltingPoint();
-      double vc_AvailableWaterPercentage_h = (soilColumn[i_Layer].get_Vs_SoilMoisture_m3() - soilColumn[i_Layer].vs_PermanentWiltingPoint()) / vc_AvailableWater_h;
+
+      // FS: this is either hourly, then soilColumn has to be updated each hour, or daily, then vc_AvailableWater and vc_AvailableWaterPercentage have to be defined outside the method
+      // double vc_AvailableWater_h = soilColumn[i_Layer].vs_FieldCapacity() - soilColumn[i_Layer].vs_PermanentWiltingPoint();
+      // double vc_AvailableWaterPercentage_h = (soilColumn[i_Layer].get_Vs_SoilMoisture_m3() - soilColumn[i_Layer].vs_PermanentWiltingPoint()) / vc_AvailableWater_h;
       // FS: Either update soil column after each hour, or somehow use an hourly updated local copy of soil column here instead?
       // ...
+      double vc_AvailableWaterPercentage_denom = scp_FieldCapacity[i_Layer] - scp_PermanentWiltingPoint[i_Layer];   // denominator; constant for 1 day
+
+      // scp_SoilMoisture_m3_h[i_Layer] = // Where and how is this actually calculated? get_Vs_SoilMoisture_m3() only gets the value for the layer and day
+      // double vc_AvailableWaterPercentage_num_h = (scp_SoilMoisture_m3_h[i_Layer] - scp_PermanentWiltingPoint[i_Layer]); // numerator
+      // double vc_AvailableWaterPercentage_h = vc_AvailableWaterPercentage_num_h / vc_AvailableWaterPercentage_denom; // numerator / denominator
+
+      // FS: or can we just take the remaining (daily - previous hours)
+      // double vc_AvailableWaterPercentage_num_h = vc_AvailableWaterPercentage_num_remaining[i_Layer];
+
+      double vc_AvailableWaterPercentage_h = (vc_AvailableWaterPercentage_denom > 0.) ? vc_AvailableWaterPercentage_num_remaining[i_Layer] / vc_AvailableWaterPercentage_denom : 0.0; // numerator / denominator
       if (vc_AvailableWaterPercentage_h < 0.0) {
         vc_AvailableWaterPercentage_h = 0.0;
       }
@@ -5652,46 +5735,46 @@ void CropModule::fc_CropWaterUptake_h(size_t vc_GroundwaterTable,
       //This would be the access point for considering compensatory effects of increased/decreased water uptake from layers that hold enough water.
       //An alternative approach for considering compensatory effects is to go through a soil water-dependent root penetration rate.
       if (vc_AvailableWaterPercentage_h < 0.15) {//MP: Access point for drought optimisation (this could be extended for waterlogging), this is for very dry condtions
-        vc_TranspirationRedux[i_Layer] = vc_AvailableWaterPercentage_h * 3.0;        // []
-        vc_RootEffectivity[i_Layer] = 0.15 + 0.45 * vc_AvailableWaterPercentage_h / 0.15; // [] MP: this is essentially *3
+        vc_TranspirationRedux_h[i_Layer] = vc_AvailableWaterPercentage_h * 3.0;        // []
+        vc_RootEffectivity_h[i_Layer] = 0.15 + 0.45 * vc_AvailableWaterPercentage_h / 0.15; // [] MP: this is essentially *3
       } else if (vc_AvailableWaterPercentage_h < 0.3) {
-        vc_TranspirationRedux[i_Layer] = 0.45 + (0.25 * (vc_AvailableWaterPercentage_h - 0.15) / 0.15);
-        vc_RootEffectivity[i_Layer] = 0.6 + (0.2 * (vc_AvailableWaterPercentage_h - 0.15) / 0.15);
+        vc_TranspirationRedux_h[i_Layer] = 0.45 + (0.25 * (vc_AvailableWaterPercentage_h - 0.15) / 0.15);
+        vc_RootEffectivity_h[i_Layer] = 0.6 + (0.2 * (vc_AvailableWaterPercentage_h - 0.15) / 0.15);
       } else if (vc_AvailableWaterPercentage_h < 0.5) {//MP: ab hier hat das fast keinen Effekt mehr
-        vc_TranspirationRedux[i_Layer] = 0.7 + (0.275 * (vc_AvailableWaterPercentage_h - 0.3) / 0.2);
-        vc_RootEffectivity[i_Layer] = 0.8 + (0.2 * (vc_AvailableWaterPercentage_h - 0.3) / 0.2);
+        vc_TranspirationRedux_h[i_Layer] = 0.7 + (0.275 * (vc_AvailableWaterPercentage_h - 0.3) / 0.2);
+        vc_RootEffectivity_h[i_Layer] = 0.8 + (0.2 * (vc_AvailableWaterPercentage_h - 0.3) / 0.2);
       } else if (vc_AvailableWaterPercentage_h < 0.75) {//MP: ab hier ist nur mehr die Transpiration betroffen
-        vc_TranspirationRedux[i_Layer] = 0.975 + (0.025 * (vc_AvailableWaterPercentage_h - 0.5) / 0.25);
-        vc_RootEffectivity[i_Layer] = 1.0;
+        vc_TranspirationRedux_h[i_Layer] = 0.975 + (0.025 * (vc_AvailableWaterPercentage_h - 0.5) / 0.25);
+        vc_RootEffectivity_h[i_Layer] = 1.0;
       } else {
-        vc_TranspirationRedux[i_Layer] = 1.0;
-        vc_RootEffectivity[i_Layer] = 1.0;
+        vc_TranspirationRedux_h[i_Layer] = 1.0;
+        vc_RootEffectivity_h[i_Layer] = 1.0;
       }
-      if (vc_TranspirationRedux[i_Layer] < 0) {
-        vc_TranspirationRedux[i_Layer] = 0.0;
+      if (vc_TranspirationRedux_h[i_Layer] < 0) {
+        vc_TranspirationRedux_h[i_Layer] = 0.0;
       }
-      if (vc_RootEffectivity[i_Layer] < 0) {
-        vc_RootEffectivity[i_Layer] = 0.0;
+      if (vc_RootEffectivity_h[i_Layer] < 0) {
+        vc_RootEffectivity_h[i_Layer] = 0.0;
       }
       if (i_Layer == vc_GroundwaterTable) { // old GRW
-        vc_RootEffectivity[i_Layer] = 0.5;
+        vc_RootEffectivity_h[i_Layer] = 0.5;
       }
       if (i_Layer > vc_GroundwaterTable) { // old GRW
-        vc_RootEffectivity[i_Layer] = 0.0;
+        vc_RootEffectivity_h[i_Layer] = 0.0;
       }
       if (((i_Layer + 1) * layerThickness) >= vs_MaxEffectiveRootingDepth) {
-        vc_RootEffectivity[i_Layer] = 0.0;
+        vc_RootEffectivity_h[i_Layer] = 0.0;
       }
 
-      vc_TotalRootEffectivity += vc_RootEffectivity[i_Layer] * vc_RootDensity[i_Layer]; //[m m-3]
-      vc_RemainingTotalRootEffectivity = vc_TotalRootEffectivity;
+      vc_TotalRootEffectivity_h += vc_RootEffectivity_h[i_Layer] * vc_RootDensity[i_Layer]; //[m m-3]
+      vc_RemainingTotalRootEffectivity_h = vc_TotalRootEffectivity_h;
     }
 
     // [TRANSPLANT SHOCK] Water Uptake Limitation.
     // Limits the total active root water uptake effectivity proportional to the shock recovery efficiency factor.
     if (vc_TransplantEfficiency < 1.0) {
-      vc_TotalRootEffectivity *= vc_TransplantEfficiency;
-      vc_RemainingTotalRootEffectivity = vc_TotalRootEffectivity;
+      vc_TotalRootEffectivity_h *= vc_TransplantEfficiency; // FS: potential bug: Is it intended that this increases vc_Transpiration_h[i_Layer], since dividing by a smaller vc_TotalRootEffectivity_h results in bigger vc_Transpiration_h[i_Layer]?
+      vc_RemainingTotalRootEffectivity_h = vc_TotalRootEffectivity_h;
     }
 
     // std::cout << setprecision(11) << "vc_TotalRootEffectivity: " << vc_TotalRootEffectivity << std::endl;
@@ -5699,22 +5782,16 @@ void CropModule::fc_CropWaterUptake_h(size_t vc_GroundwaterTable,
 
     for (size_t i_Layer = 0; i_Layer < nols; i_Layer++) {
       if (i_Layer > min(vc_RootingZone, vc_GroundwaterTable + 1)) {
-        // vc_Transpiration[i_Layer] = 0.0; //[mm]
-        vc_Transpiration[i_Layer] += 0.0; //[mm]
+        vc_Transpiration_h[i_Layer] = 0.0; //[mm]
       } else {
-        // vc_Transpiration[i_Layer] = vc_TotalRootEffectivity != 0.0
-        //                             ? vc_PotentialTranspiration_h *
-        //                               ((vc_RootEffectivity[i_Layer] * vc_RootDensity[i_Layer]) /
-        //                                vc_TotalRootEffectivity) * vc_OxygenDeficit_h //MP: why is this not changing anything? (I think it would only change something for too dry conditions).
-        //                             : 0;
-        vc_Transpiration[i_Layer] += vc_TotalRootEffectivity != 0.0
+        vc_Transpiration_h[i_Layer] = vc_TotalRootEffectivity_h != 0.0
                                     ? vc_PotentialTranspiration_h *
-                                      ((vc_RootEffectivity[i_Layer] * vc_RootDensity[i_Layer]) /
-                                       vc_TotalRootEffectivity) * vc_OxygenDeficit_h //MP: why is this not changing anything? (I think it would only change something for too dry conditions).
+                                      ((vc_RootEffectivity_h[i_Layer] * vc_RootDensity[i_Layer]) /
+                                       vc_TotalRootEffectivity_h) * vc_OxygenDeficit_h //MP: why is this not changing anything? (I think it would only change something for too dry conditions).
                                     : 0;
 
-        // std::cout << setprecision(11) << "vc_Transpiration[i_Layer]: " << i_Layer << ", " << vc_Transpiration[i_Layer] << std::endl;
-        // std::cout << setprecision(11) << "vc_RootEffectivity[i_Layer]: " << i_Layer << ", " << vc_RootEffectivity[i_Layer] << std::endl;
+        // std::cout << setprecision(11) << "vc_Transpiration_h[i_Layer]: " << i_Layer << ", " << vc_Transpiration_h[i_Layer] << std::endl;
+        // std::cout << setprecision(11) << "vc_RootEffectivity_h[i_Layer]: " << i_Layer << ", " << vc_RootEffectivity_h[i_Layer] << std::endl;
         // std::cout << setprecision(11) << "vc_RootDensity[i_Layer]: " << i_Layer << ", " << vc_RootDensity[i_Layer] << std::endl;
 
         // [mm]
@@ -5723,47 +5800,55 @@ void CropModule::fc_CropWaterUptake_h(size_t vc_GroundwaterTable,
 
     for (size_t i_Layer = 0; i_Layer < min(vc_RootingZone, vc_GroundwaterTable + 1); i_Layer++) {
 
-      vc_RemainingTotalRootEffectivity -= vc_RootEffectivity[i_Layer] * vc_RootDensity[i_Layer]; // [m m-3]
+      vc_RemainingTotalRootEffectivity_h -= vc_RootEffectivity_h[i_Layer] * vc_RootDensity[i_Layer]; // [m m-3]
 
-      if (vc_RemainingTotalRootEffectivity <= 0.0) {
-        vc_RemainingTotalRootEffectivity = 0.00001;
+      if (vc_RemainingTotalRootEffectivity_h <= 0.0) {
+        vc_RemainingTotalRootEffectivity_h = 0.00001;
       }
-      if (((vc_Transpiration[i_Layer] / 1000.0) / layerThickness) >
-          ((soilColumn[i_Layer].get_Vs_SoilMoisture_m3() - soilColumn[i_Layer].vs_PermanentWiltingPoint()))) {
-        vc_PotentialTranspirationDeficit_h = (((vc_Transpiration[i_Layer] / 1000.0) / layerThickness) -
-                                            (soilColumn[i_Layer].get_Vs_SoilMoisture_m3() -
-                                             soilColumn[i_Layer].vs_PermanentWiltingPoint())) * layerThickness *
-                                           1000.0; // [mm]
+      if (((vc_Transpiration_h[i_Layer] / 1000.0) / layerThickness) >
+                    // ((soilColumn_h[i_Layer].get_Vs_SoilMoisture_m3() - soilColumn_h[i_Layer].vs_PermanentWiltingPoint()))) {
+                    vc_AvailableWaterPercentage_num_remaining[i_Layer]) {
+        vc_PotentialTranspirationDeficit_h = (((vc_Transpiration_h[i_Layer] / 1000.0) / layerThickness) -
+                                            // (soilColumn_h[i_Layer].get_Vs_SoilMoisture_m3() - soilColumn_h[i_Layer].vs_PermanentWiltingPoint())) *
+                                            vc_AvailableWaterPercentage_num_remaining[i_Layer]) *
+                                            layerThickness * 1000.0; // [mm]
         if (vc_PotentialTranspirationDeficit_h < 0.0) {
           vc_PotentialTranspirationDeficit_h = 0.0;
         }
-        if (vc_PotentialTranspirationDeficit_h > vc_Transpiration[i_Layer]) {
-          vc_PotentialTranspirationDeficit_h = vc_Transpiration[i_Layer]; //[mm]
+        if (vc_PotentialTranspirationDeficit_h > vc_Transpiration_h[i_Layer]) {
+          vc_PotentialTranspirationDeficit_h = vc_Transpiration_h[i_Layer]; //[mm]
         }
       } else {
         vc_PotentialTranspirationDeficit_h = 0.0;
       }
-      vc_TranspirationReduced_h = vc_Transpiration[i_Layer] * (1.0 - vc_TranspirationRedux[i_Layer]);
+      vc_TranspirationReduced_h = vc_Transpiration_h[i_Layer] * (1.0 - vc_TranspirationRedux_h[i_Layer]);
 
       //! @todo Claas: How can we lower the groundwater table if crop water uptake is restricted in that layer?
       vc_ActualTranspirationDeficit_h = max(vc_TranspirationReduced_h, vc_PotentialTranspirationDeficit_h); //[mm]
       if (vc_ActualTranspirationDeficit_h > 0.0) {
         if (i_Layer < min(vc_RootingZone, vc_GroundwaterTable + 1)) {
           for (size_t i_Layer2 = i_Layer + 1; i_Layer2 < min(vc_RootingZone, vc_GroundwaterTable + 1); i_Layer2++) {
-            vc_Transpiration[i_Layer2] += vc_ActualTranspirationDeficit_h *
-                                          (vc_RootEffectivity[i_Layer2] * vc_RootDensity[i_Layer2] /
-                                           vc_RemainingTotalRootEffectivity);
+            vc_Transpiration_h[i_Layer2] += vc_ActualTranspirationDeficit_h *
+                                          (vc_RootEffectivity_h[i_Layer2] * vc_RootDensity[i_Layer2] /
+                                           vc_RemainingTotalRootEffectivity_h);
           }
         }
       }
-      vc_Transpiration[i_Layer] = vc_Transpiration[i_Layer] - vc_ActualTranspirationDeficit_h;//MP: this is a key line for water stress response
-      if (vc_Transpiration[i_Layer] < 0.0) {
-        vc_Transpiration[i_Layer] = 0.0;
+      vc_Transpiration_h[i_Layer] = vc_Transpiration_h[i_Layer] - vc_ActualTranspirationDeficit_h;//MP: this is a key line for water stress response
+      if (vc_Transpiration_h[i_Layer] < 0.0) {
+        vc_Transpiration_h[i_Layer] = 0.0;
       }
-      vc_ActualTranspiration_h += vc_Transpiration[i_Layer];
+
+      
+
+      vc_ActualTranspiration_h += vc_Transpiration_h[i_Layer];
       if (i_Layer == vc_GroundwaterTable) {
-        vc_CropWaterUptakeFromGroundwater = (vc_Transpiration[i_Layer] / 1000.0) / layerThickness; //[m3 m-3]
+        vc_CropWaterUptakeFromGroundwater_h = (vc_Transpiration_h[i_Layer] / 1000.0) / layerThickness; //[m3 m-3]
       }
+
+      // FS: check if this is the correct place for this
+      vc_AvailableWaterPercentage_num_remaining[i_Layer] -= (vc_Transpiration_h[i_Layer] / 1000.0) / layerThickness;  // remaining availyble soil water (for the rest of the day day) = remaining available soil water (for the rest of the day day) - transpired water from soil via crop (this hour)
+      vc_AvailableWaterPercentage_num_remaining[i_Layer] = max(0.0, vc_AvailableWaterPercentage_num_remaining[i_Layer]);  // FS: additional safeguard
     }
 
     // FS: vc_TranspirationDeficit affects drought impact on fertility and potentially other CropModule methods as well
@@ -5775,7 +5860,18 @@ void CropModule::fc_CropWaterUptake_h(size_t vc_GroundwaterTable,
     // std::cout << "vm_GroundwaterDistance: " << vm_GroundwaterDistance << std::endl;
     if (vm_GroundwaterDistance <= 1) vc_TranspirationDeficit_h = 1.0;
     if (!pc_WaterDeficitResponseOn) vc_TranspirationDeficit_h = 1.0;
+
+    vc_TranspirationDeficit_h = bound(0.0, vc_TranspirationDeficit_h, 1.0); // FS: additional safeguard
   }
+
+  // FS: Would an else block here really always set all the state variables in the backgroundt to 0 (same as reset block at method start)?
+  //     Or are there state variables in this method that purposely just keep the state of the previous day for vc_DevelopmentStage >= vc_FinalDevelopmentStage
+
+
+  // FS: There is no else block here    [if (vc_DevelopmentalStage < vc_FinalDevelopmentalStage) {...}]
+  //     If I understand the code above correctly, when all water comes from the interception storage and none from the soil before reaching final development stage, this leads to vc_RemainingEvapotranspiration = 0.0 -> vc_PotentialTranspiration = 0.0 -> vc_TranspirationDeficit = 1.0, which is correct.
+  //     What happens to the transpiration deficit (= drought stress factor applied multiplicatively to gross phtotsynthesis), when all water comes from the interception storage and none from the soil at final development stage? Will it just keep the value from the previous hour? If so, is that intended (since keeping the factor the same for that entire period based on just one hour could be dangerous)?
+  //     And does it even matter, or are conditions elswehere ensuring correct consistent behaviour?
 }
 
 
@@ -5820,7 +5916,7 @@ std::pair<std::vector<double>, double> CropModule::fc_CropWaterUptake_notApplied
   // ################
   // # Interception #
   // ################
-  // FS: moved to CropModule::fc_CropInterception(double vw_GrossPrecipitation)
+  // FS: moved to CropModule::fc_CropInterception(...)
 
   // #################
   // # Transpiration #
@@ -5908,7 +6004,7 @@ std::pair<std::vector<double>, double> CropModule::fc_CropWaterUptake_notApplied
     // [TRANSPLANT SHOCK] Water Uptake Limitation.
     // Limits the total active root water uptake effectivity proportional to the shock recovery efficiency factor.
     if (vc_TransplantEfficiency < 1.0) {
-      vc_TotalRootEffectivity *= vc_TransplantEfficiency;
+      vc_TotalRootEffectivity *= vc_TransplantEfficiency; // FS: potential bug: Is it intended that this increases vc_Transpiration[i_Layer], since dividing by a smaller vc_TotalRootEffectivity results in bigger vc_Transpiration[i_Layer]?
       vc_RemainingTotalRootEffectivity = vc_TotalRootEffectivity;
     }
 
@@ -5987,6 +6083,8 @@ std::pair<std::vector<double>, double> CropModule::fc_CropWaterUptake_notApplied
     // std::cout << "vm_GroundwaterDistance: " << vm_GroundwaterDistance << std::endl;
     if (vm_GroundwaterDistance <= 1) {vc_TranspirationDeficit = 1.0; }
     if (!pc_WaterDeficitResponseOn) {vc_TranspirationDeficit = 1.0; }
+
+    vc_TranspirationDeficit = bound(0.0, vc_TranspirationDeficit, 1.0); // FS: additional safeguard
   }
   return {vc_Transpiration, vc_TranspirationDeficit};
 }
@@ -6149,6 +6247,10 @@ void CropModule::fc_CropNUptake(size_t vc_GroundwaterTable,
       vc_NConcentrationRoot = tempNConcentrationRoot;
     }
   }
+  // FS: There is no else block here    [if (vc_DevelopmentalStage < vc_FinalDevelopmentalStage) {...}]
+  //     If I understand the code above correctly, when all water comes from the interception storage and none from the soil before reaching final development stage, this leads to vc_RemainingEvapotranspiration = 0.0 -> vc_PotentialTranspiration = 0.0 -> vc_TranspirationDeficit = 1.0, which is correct.
+  //     What happens to the transpiration deficit (= drought stress factor applied multiplicatively to gross phtotsynthesis), when all water comes from the interception storage and none from the soil at final development stage? Will it just keep the value from the previous day? If so, is that intended (since keeping the factor the same for that entire period based on just one day could be dangerous)?
+  //     And does it even matter, or are conditions elswehere ensuring correct consistent behaviour?
 }
 
 /**

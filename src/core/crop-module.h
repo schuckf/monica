@@ -307,7 +307,9 @@ public:
                           double vc_CurrentTotalTemperatureSum,
                           double vc_TotalTemperatureSum);
 
-  std::pair<double, double> fc_CropInterception(double vw_GrossPrecipitation, double vc_InterceptionStorage, double vc_NetPrecipitation);
+  std::pair<double, double> fc_CropInterception(double vw_GrossPrecipitation, double vc_InterceptionStorage);
+
+  void CropModule::update_extracted_soilColumn_params_from_daily();
 
   void fc_CropWaterUptake_h(size_t vm_GroundwaterTable,
                             double vc_ReferenceEvapotranspiration_h); //, double vc_OxygenDeficit_h);
@@ -622,6 +624,9 @@ public:
   double vc_PotentialTranspirationDeficit_h{ 0.0 };                         // FS: hourly
   double vc_ActualTranspirationDeficit_h{ 0.0 };                            // FS: hourly
   double vc_TranspirationReduced_h{ 0.0 };                                  // FS: hourly
+  std::vector<double> scp_FieldCapacity;                                         // FS test
+  std::vector<double> scp_PermanentWiltingPoint;                                 // FS test
+  std::vector<double> vc_AvailableWaterPercentage_num_remaining;                 // FS test
 
 private:
   Intercropping& _intercropping;
@@ -736,6 +741,7 @@ private:
   std::vector<double> pc_InitialOrganBiomass;
   double pc_InitialRootingDepth{};
   double vc_InterceptionStorage{0.0};
+  double vc_InterceptionStorage_remaining{0.0};                             // FS: hourly
   double vc_KcFactor{0.6}; //! old FKc
   double vc_LeafAreaIndex{0.0}; //! old LAI
   std::vector<double> vc_sunlitLeafAreaIndex;
@@ -800,6 +806,7 @@ private:
   double vc_ReferenceEvapotranspiration{0.0};
   double vc_RelativeTotalDevelopment{0.0};
   double vc_RemainingEvapotranspiration{0.0};
+  double vc_RemainingEvapotranspiration_h{0.0};                             // FS test
   double vc_ReserveAssimilatePool{0.0}; //! old ASPOO
   double pc_ResidueNRatio{};
   double pc_RespiratoryStress{};
@@ -809,6 +816,7 @@ private:
   std::vector<double> vc_RootDiameter; //! old WRAD
   double pc_RootDistributionParam{};
   std::vector<double> vc_RootEffectivity; //! old WUEFF
+  std::vector<double> vc_RootEffectivity_h;                                 // FS test
   double pc_RootFormFactor{};
   double pc_RootGrowthLag{};
   size_t vc_RootingDepth{0}; //! old WURZ
@@ -861,6 +869,8 @@ private:
   double vc_TemperatureSumToFlowering{0.0};
   std::vector<double> vc_Transpiration; //! old TP
   std::vector<double> vc_TranspirationRedux; //! old TRRED
+  std::vector<double> vc_Transpiration_h;                                   // FS test
+  std::vector<double> vc_TranspirationRedux_h;                              // FS test
   double vc_VernalisationDays{0.0}; //
   double vc_VernalisationFactor{0.0}; //! old FV
   std::vector<double> pc_VernalisationRequirement; //! old VSCHWELL

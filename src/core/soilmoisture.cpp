@@ -298,7 +298,7 @@ void SoilMoisture::step(double vs_GroundwaterDepth,
     vc_CropHeight = monica.cropGrowth()->get_CropHeight();
     vc_DevelopmentalStage = (int)monica.cropGrowth()->get_DevelopmentalStage();
     if (vc_DevelopmentalStage > 0) {
-      vc_NetPrecipitation = monica.cropGrowth()->get_NetPrecipitation();
+      vc_NetPrecipitation = monica.cropGrowth()->get_NetPrecipitation();                                      // FS test
     } else {
       vc_NetPrecipitation = vw_Precipitation;
     }
@@ -997,15 +997,15 @@ void SoilMoisture::fm_Evapotranspiration(double vc_PercentageSoilCoverage, doubl
     // Reference evapotranspiration is only grabbed here for consistent
     // output in monica.cpp
     if (vw_ReferenceEvapotranspiration < 0.0) {
-      vm_ReferenceEvapotranspiration = monica.cropGrowth()->get_ReferenceEvapotranspiration();
+      vm_ReferenceEvapotranspiration = monica.cropGrowth()->get_ReferenceEvapotranspiration();                // FS test
     } else {
       vm_ReferenceEvapotranspiration = vw_ReferenceEvapotranspiration;
     }
 
     // Remaining ET from crop module already includes Kc factor and evaporation
     // from interception storage
-    vm_PotentialEvapotranspiration = monica.cropGrowth()->get_RemainingEvapotranspiration();
-    vc_EvaporatedFromIntercept = monica.cropGrowth()->get_EvaporatedFromIntercept();
+    vm_PotentialEvapotranspiration = monica.cropGrowth()->get_RemainingEvapotranspiration();                  // FS test
+    vc_EvaporatedFromIntercept = monica.cropGrowth()->get_EvaporatedFromIntercept();                          // FS test
   } else { // if no crop grows ETp is calculated from ET0 * kc
 
     // calculate reference evapotranspiration if not provided via climate files
@@ -1152,7 +1152,7 @@ std::cerr
 
           // Transpiration is derived from ET0; Soil coverage and Kc factors
           // already considered in crop part!
-          vm_Transpiration[i_Layer] = monica.cropGrowth()->get_Transpiration(i_Layer);  // FS: this reads transpiration from the crop module
+          vm_Transpiration[i_Layer] = monica.cropGrowth()->get_Transpiration(i_Layer);                        // FS test: this reads transpiration from the crop module
 
           //std::cout << setprecision(11) << "vm_Transpiration[i_Layer]: " << i_Layer << ", " << vm_Transpiration[i_Layer] << std::endl;
           std::cerr << setprecision(11) << "vm_Transpiration[i_Layer]: " << i_Layer << ", " << vm_Transpiration[i_Layer] << std::endl;
