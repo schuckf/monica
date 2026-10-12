@@ -232,8 +232,8 @@ public:
     std::vector<double> hourlyRH;
     std::vector<double> hourlyWindSpeed;
     std::vector<double> hourlyPrecip;
-    int sunriseH;
-    int sunsetH;
+    double sunriseH;
+    double sunsetH;
   };
 
   subdaily_data subdaily_meteodata(const Tools::Date &currentDate, double vw_MinAirTemperature, double vw_MaxAirTemperature, double vw_WindSpeed);
@@ -624,9 +624,9 @@ public:
   double vc_PotentialTranspirationDeficit_h{ 0.0 };                         // FS: hourly
   double vc_ActualTranspirationDeficit_h{ 0.0 };                            // FS: hourly
   double vc_TranspirationReduced_h{ 0.0 };                                  // FS: hourly
-  std::vector<double> scp_FieldCapacity;                                         // FS test
-  std::vector<double> scp_PermanentWiltingPoint;                                 // FS test
-  std::vector<double> vc_AvailableWaterPercentage_num_remaining;                 // FS test
+  std::vector<double> scp_FieldCapacity;                                    // FS test
+  std::vector<double> scp_PermanentWiltingPoint;                            // FS test
+  std::vector<double> vc_AvailableWaterPercentage_num_remaining;            // FS test
 
 private:
   Intercropping& _intercropping;
@@ -853,6 +853,8 @@ private:
   int vc_StorageOrgan{4};
   double vc_TargetNConcentration{0.0}; //! old GEHMAX
   double vc_TimeStep{1.0}; //! old dt
+  double vc_OverclockingTimeStep = {1.0};                                   // FS: overclocking time step length [hours]
+  double vc_OcTS_num = {24.0};                                              // FS: number of time steps per day (=24.0/vc_OverclockingTimeStep)
   int TimeUnderAnoxiaThresholdDefault = 4;
   std::vector<int> vc_TimeUnderAnoxiaThreshold;
   double vs_Tortuosity{}; //! old AD

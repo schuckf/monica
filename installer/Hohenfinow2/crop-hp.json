@@ -371,8 +371,10 @@
     "__enable_hourly_photosynthesis__": 1,
     "__enable_hourly_outputs__": true,
     "__enable_Photosynthesis_WangEngelTemperatureResponse__": false,
+
     "__//Tair, Idir, Idif": "",
     "__hourly_data__": ["include-from-file", "C:/Users/hswt906fel/Documents/GitHub/zalf-rpm/monica/installer/Hohenfinow2/hourly_data.json"],
-    "__//    {1993-01-01_0: [0.0, 0.0, 0.0], }": ""
+    "__//    {1993-01-01_0: [0.0, 0.0, 0.0], }": "",
+    "__//__longitude__": ""
     }
 }
