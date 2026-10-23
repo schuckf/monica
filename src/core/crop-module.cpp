@@ -3444,7 +3444,10 @@ CropModule::subdaily_data CropModule::subdaily_meteodata(const Tools::Date &curr
       // read hourly data from json object dictionary __hourly_in_data__
       auto hourly_data_in = cropPs.__hourly_in_data__.at(current_isodatetime).array_items();
       size_t varnum = hourly_data_in.size();
+      sd._nvars_read_from_json.push_back(varnum);
       switch (varnum) {
+        case 7:     // use hourly global irradiance instead of direct and diffuse
+          [[fallthrough]]
         case 6:     // hourly precipitation
           sd.hourlyPrecip.push_back(hourly_data_in.at(5).number_value());
           [[fallthrough]];
@@ -3459,15 +3462,19 @@ CropModule::subdaily_data CropModule::subdaily_meteodata(const Tools::Date &curr
         //   [[fallthrough]];
         // }
         // case 2: {
-          double iDif_h = hourly_data_in.at(1).number_value();
-          sd.hourlyIdif.push_back(iDif_h);
-          double iDir_h = hourly_data_in.at(2).number_value();
-          sd.hourlyIdir.push_back(iDir_h);
-          hgr = iDif_h + iDir_h;            // global radiation for the hour
+          if (varnum == 7) {  // use hourly global irradiance instead of direct and diffuse
+            hgr = hourly_data_in.at(6).number_value();
+          } else {            // use direct and diffuse irradiance
+            double iDif_h = hourly_data_in.at(1).number_value();
+            sd.hourlyIdif.push_back(iDif_h);
+            double iDir_h = hourly_data_in.at(2).number_value();
+            sd.hourlyIdir.push_back(iDir_h);
+            hgr = iDif_h + iDir_h;            // global radiation for the hour
+          }
           break;
         }
         default:
-          throw std::runtime_error("Invalid hourly data format: expected 3-6 values");
+          throw std::runtime_error("Invalid hourly data format: expected 3-7 values");
       }
 
       // calculate solar position based on actual time (isodate string)
@@ -3488,6 +3495,7 @@ CropModule::subdaily_data CropModule::subdaily_meteodata(const Tools::Date &curr
       sun_el = (sun_el > hPhoto::eps) ? sun_el : 0.;
       hgr = hourlyRad(vc_GlobalRadiation, vs_Latitude, vs_JulianDay, t); // FS: adjust hourlyRad function in the future; harmonize with solarElevation function?
       if (hgr > 0) assert(sun_el > 0);
+      sd._nvars_read_from_json.push_back(0);
     }
     sd.hourlyGlobrad.push_back(hgr);
     sd.hourlyExtrarad.push_back(hourlyRad(vc_ExtraterrestrialRadiation, vs_Latitude, vs_JulianDay, t));
@@ -3681,7 +3689,7 @@ CropModule::GP_results CropModule::subdaily_photosynthesis(double i, const CropM
   // hourly weather data
   double inst_diff_rad, inst_dir_rad, hourlyPhoto, hourlyPhotoRef;
   // double inst_glob_rad;
-  if (!cropPs.__hourly_in_data__.empty()) { // hourly diffuse and direct irradiance input from file
+  if ((!cropPs.__hourly_in_data__.empty()) && (sd._nvars_read_from_json.at(i) != 7)) { // hourly diffuse and direct irradiance input from file
     //direct && diffuse
     inst_diff_rad = sd.hourlyIdif.at(i);
     inst_dir_rad = sd.hourlyIdir.at(i);
@@ -4964,7 +4972,7 @@ double CropModule::fc_ReferenceEvapotranspiration_h(double vw_DewAirTemperature,
                                                                                                               (vc_SurfaceResistance_h /
                                                                                                                vc_AerodynamicResistance_h)));
 
-  /* FS DEBUG
+  /*
   const double radiationTerm_h = 0.408 * vc_SaturatedVapourPressureSlope_h * (vw_NetRadiation_h-soilHeatflux);
   const double aerodynamicTerm_h = vc_PsycrometerConstant * (37.0 / (vw_MeanAirTemperature_h + 273.0)) * vc_WindSpeed_h_2m * vc_SaturationDeficit;
   const double denominator_h = vc_SaturatedVapourPressureSlope_h + vc_PsycrometerConstant * (1.0 + (vc_SurfaceResistance_h / vc_AerodynamicResistance_h));
@@ -5133,7 +5141,7 @@ double CropModule::fc_ReferenceEvapotranspiration_notApplied(double vw_MaxAirTem
                                                                (vc_SurfaceResistance /
                                                                 vc_AerodynamicResistance)));
 
-  /* FS DEBUG
+  /*
   double radiationTerm = 0.408 * vc_SaturatedVapourPressureSlope * vw_NetRadiation;
   double aerodynamicTerm = vc_PsycrometerConstant * (900.0 / (vw_MeanAirTemperature + 273.0)) * vc_WindSpeed_2m * vc_SaturationDeficit;
   double denominator = vc_SaturatedVapourPressureSlope + vc_PsycrometerConstant * (1.0 + (vc_SurfaceResistance / vc_AerodynamicResistance));
@@ -5403,9 +5411,6 @@ void CropModule::fc_CropWaterUptake(size_t vc_GroundwaterTable,
   //     And does it even matter, or are conditions elswehere ensuring correct consistent behaviour?
 }
 
-
-
-
 /**
  * @brief interception calculation
  * 
@@ -5454,7 +5459,6 @@ pair<double, double> CropModule::fc_CropInterception(double vw_GrossPrecipitatio
 
   return {vc_InterceptionStorage, vc_NetPrecipitation};
 }
-
 
 void CropModule::update_extracted_soilColumn_params_from_daily() {
   size_t nols = soilColumn.vs_NumberOfLayers();
@@ -5523,8 +5527,6 @@ void CropModule::fc_CropWaterUptake_h(size_t vc_GroundwaterTable,
     vc_PotentialEvapotranspiration_h = 1.0;
   }
 
-  // FS: altered CropModule attrs here: vc_InterceptionStorage, vc_RemainingEvapotranspiration, vc_EvaporatedFromIntercept
-
   vc_RemainingEvapotranspiration_h = vc_PotentialEvapotranspiration_h; // [mm]
 
   // If crop holds intercepted water, first evaporation from crop surface
@@ -5542,12 +5544,6 @@ void CropModule::fc_CropWaterUptake_h(size_t vc_GroundwaterTable,
     vc_EvaporatedFromIntercept_h = 0.0;
   }
 
-  // FS: altered CropModule attrs here: vc_Transpiration, vc_PotentialTranspiration, vc_TranspirationRedux, vc_RootEffectivity, vc_PotentialTranspirationDeficit
-  //     vc_Transpiration has to be updated (either hourly, or at the end of the day, so soilmoisture.cpp can update vm_SoilMoisture for all layers)!
-  //     Check if vc_TranspirationRedux can be local here, since it seems to usually get reset before anyways -> check where else it gets used!
-  //     ...
-  //     WHat happens to ground water table, if we take out water hourly? Can we neglect this subdaily dynamic?
-
   // if the plant has matured, no transpiration occurs!
   if (vc_DevelopmentalStage < vc_FinalDevelopmentalStage) {
     // if ((vc_CurrentTotalTemperatureSum / vc_TotalTemperatureSum) < 1.0){
@@ -5555,21 +5551,7 @@ void CropModule::fc_CropWaterUptake_h(size_t vc_GroundwaterTable,
     vc_PotentialTranspiration_h = vc_RemainingEvapotranspiration_h * vc_SoilCoverage; // [mm]
 
     for (size_t i_Layer = 0; i_Layer < vc_RootingZone; i_Layer++) {
-
-      // FS: this is either hourly, then soilColumn has to be updated each hour, or daily, then vc_AvailableWater and vc_AvailableWaterPercentage have to be defined outside the method
-      // double vc_AvailableWater_h = soilColumn[i_Layer].vs_FieldCapacity() - soilColumn[i_Layer].vs_PermanentWiltingPoint();
-      // double vc_AvailableWaterPercentage_h = (soilColumn[i_Layer].get_Vs_SoilMoisture_m3() - soilColumn[i_Layer].vs_PermanentWiltingPoint()) / vc_AvailableWater_h;
-      // FS: Either update soil column after each hour, or somehow use an hourly updated local copy of soil column here instead?
-      // ...
       double vc_AvailableWaterPercentage_denom = scp_FieldCapacity[i_Layer] - scp_PermanentWiltingPoint[i_Layer];   // denominator; constant for 1 day
-
-      // scp_SoilMoisture_m3_h[i_Layer] = // Where and how is this actually calculated? get_Vs_SoilMoisture_m3() only gets the value for the layer and day
-      // double vc_AvailableWaterPercentage_num_h = (scp_SoilMoisture_m3_h[i_Layer] - scp_PermanentWiltingPoint[i_Layer]); // numerator
-      // double vc_AvailableWaterPercentage_h = vc_AvailableWaterPercentage_num_h / vc_AvailableWaterPercentage_denom; // numerator / denominator
-
-      // FS: or can we just take the remaining (daily - previous hours)
-      // double vc_AvailableWaterPercentage_num_h = vc_AvailableWaterPercentage_num_remaining[i_Layer];
-
       double vc_AvailableWaterPercentage_h = (vc_AvailableWaterPercentage_denom > 0.) ? vc_AvailableWaterPercentage_num_remaining[i_Layer] / vc_AvailableWaterPercentage_denom : 0.0; // numerator / denominator
       if (vc_AvailableWaterPercentage_h < 0.0) {
         vc_AvailableWaterPercentage_h = 0.0;
@@ -5717,7 +5699,6 @@ void CropModule::fc_CropWaterUptake_h(size_t vc_GroundwaterTable,
   //     What happens to the transpiration deficit (= drought stress factor applied multiplicatively to gross phtotsynthesis), when all water comes from the interception storage and none from the soil at final development stage? Will it just keep the value from the previous hour? If so, is that intended (since keeping the factor the same for that entire period based on just one hour could be dangerous)?
   //     And does it even matter, or are conditions elswehere ensuring correct consistent behaviour?
 }
-
 
 /**
  * @brief  calculate hourly water uptake by the crop, without actually applying it - FOR DEBUGGING/COMPARISON ONLY!

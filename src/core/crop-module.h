@@ -234,6 +234,7 @@ public:
     std::vector<double> hourlyPrecip;
     double sunriseH;
     double sunsetH;
+    std::vector<int> _nvars_read_from_json;
   };
 
   subdaily_data subdaily_meteodata(const Tools::Date &currentDate, double vw_MinAirTemperature, double vw_MaxAirTemperature, double vw_WindSpeed);
