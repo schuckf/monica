@@ -3447,7 +3447,8 @@ CropModule::subdaily_data CropModule::subdaily_meteodata(const Tools::Date &curr
       sd._nvars_read_from_json.push_back(varnum);
       switch (varnum) {
         case 7:     // use hourly global irradiance instead of direct and diffuse
-          [[fallthrough]]
+          hgr = hourly_data_in.at(6).number_value();
+          [[fallthrough]];
         case 6:     // hourly precipitation
           sd.hourlyPrecip.push_back(hourly_data_in.at(5).number_value());
           [[fallthrough]];
@@ -3462,15 +3463,15 @@ CropModule::subdaily_data CropModule::subdaily_meteodata(const Tools::Date &curr
         //   [[fallthrough]];
         // }
         // case 2: {
-          if (varnum == 7) {  // use hourly global irradiance instead of direct and diffuse
-            hgr = hourly_data_in.at(6).number_value();
-          } else {            // use direct and diffuse irradiance
-            double iDif_h = hourly_data_in.at(1).number_value();
-            sd.hourlyIdif.push_back(iDif_h);
-            double iDir_h = hourly_data_in.at(2).number_value();
-            sd.hourlyIdir.push_back(iDir_h);
-            hgr = iDif_h + iDir_h;            // global radiation for the hour
-          }
+          // use direct and diffuse irradiance
+          double iDif_h = hourly_data_in.at(1).number_value();
+          sd.hourlyIdif.push_back(iDif_h);
+          double iDir_h = hourly_data_in.at(2).number_value();
+          sd.hourlyIdir.push_back(iDir_h);
+
+          if (varnum != 7) {  // if no hourly global irradiance read in
+            hgr = iDif_h + iDir_h;  // calculate global radiation for the hour
+            } // else: use read in hourly global irradiance instead of sum of direct and diffuse
           break;
         }
         default:
@@ -4890,9 +4891,7 @@ double CropModule::fc_ReferenceEvapotranspiration_h(double vw_DewAirTemperature,
     vc_StomataResistance_h = MaxStomataResistance;
   } else {
 
-    // crop stomata resistance according to Yu et al. 2001 (FS: which Yu et al. 2001 publication?
-    //                                                          - this one https://doi.org/10.1023/A:1012435717205 ? is this related to eq. 1c (which is for gs_CO2 however)?
-    //                                                          - probably not this one: https://doi.org/10.1078/0176-1617-00177)
+    // crop stomata resistance according to Yu et al. 2001 (FS: Is this based on eq. 1c, with r_s = 1/g_sc? Eq. 1c seems to be for gs_CO2 however, not for H20. Is this being taken into account via the parameters)?
     // FS: - this should be for H2O diffusion in order to make sense (ET context and higher resistance to H2O with higher atm. CO2,
     //       resulting in lower water loss through crop ET), but check again in the actual paper!
     //     - also, Cs is assumed to be equal to Ca (vw_AtmosphericCO2Concentration) here, which is a rough simplification
