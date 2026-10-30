@@ -34,6 +34,7 @@ Copyright (C) Leibniz Centre for Agricultural Landscape Research (ZALF)
 #include "model/monica/monica_state.capnp.h"
 
 #include "monica-parameters.h"
+#include "photosynthesis-hourly.h"
 #include "soilcolumn.h"
 #include "voc-common.h"
 #include "run/cultivation-method.h"
@@ -173,7 +174,7 @@ public:
    *  term1
    *  term2
    */
-  std::tuple<double, double, double, double> vc_KTkc_vc_KTko(double vw_MeanAirTemperature) const;
+  std::tuple<double, double, double, double> fc_KTkc_vc_KTko_term1_term2(double vw_MeanAirTemperature) const;
 
   struct A_rubisco_results {
       double vc_AssimilationRate;
@@ -223,12 +224,12 @@ public:
                              double vc_PsycrometerConstant);
 
   struct subdaily_data {
-    std::vector<double> hourlyGlobrad;
-    std::vector<double> hourlyExtrarad;
+    std::vector<double> hourlyGlobrad;  // [MJ m-2 per model timestep]
+    std::vector<double> hourlyExtrarad; // [MJ m-2 per model timestep]
     std::vector<double> hourlySolarEl;
     std::vector<double> hourlyAirT;
-    std::vector<double> hourlyIdif;
-    std::vector<double> hourlyIdir;
+    std::vector<double> hourlyIdif;     // [MJ m-2 per model timestep]
+    std::vector<double> hourlyIdir;     // [MJ m-2 per model timestep]
     std::vector<double> hourlyRH;
     std::vector<double> hourlyWindSpeed;
     std::vector<double> hourlyPrecip;
@@ -237,7 +238,7 @@ public:
     std::vector<int> _nvars_read_from_json;
   };
 
-  subdaily_data subdaily_meteodata(const Tools::Date &currentDate, double vw_MinAirTemperature, double vw_MaxAirTemperature, double vw_WindSpeed);
+  subdaily_data subdaily_meteodata(const Tools::Date &currentDate, double vw_MinAirTemperature, double vw_MaxAirTemperature, double vw_WindSpeed, hPhoto::unit RadiationInUnit=hPhoto::unit::Wpm2);
 
   struct GP_results {
     double A;       // canopy gross photosynthesis for the whole canopy
@@ -254,7 +255,7 @@ public:
                                           double vw_AtmosphericCO2Concentration); // ,
                                           // double vw_AtmosphericO3Concentration);
 
-  GP_results subdaily_photosynthesis(double h, const CropModule::subdaily_data &sd, double vw_AtmosphericCO2Concentration, double parfrac, bool cscor, bool parcor);
+  GP_results subdaily_photosynthesis(size_t i, const CropModule::subdaily_data &sd, double vw_AtmosphericCO2Concentration, double parfrac, bool cscor, bool parcor);
 
   void fc_CropPhotosynthesis(double vw_MeanAirTemperature,
                              double vw_MaxAirTemperature,

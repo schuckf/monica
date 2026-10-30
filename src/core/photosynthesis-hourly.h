@@ -6,8 +6,6 @@
 #include <assert.h>
 #include <stdexcept>
 
-using namespace std;
-
 #ifndef M_PI
 constexpr double M_PI = 3.14159265358979323846;  // M_PI = 4 * atan(1.)
 #endif
@@ -18,15 +16,15 @@ const double eps = 1e-6; // machine epsilon
 
 
 enum class unit {// supported units: MJpm2ps, Jpm2ps, Wpm2ps, umolpm2ps
-    MJpm2ps = 0,     // MJ   m-2 h-1 PAR
-    Jpm2ps,          // J    m-2 h-1 PAR
-    Wpm2ps,          // W    m-2     PAR
+    MJpm2ph = 0,     // MJ   m-2 h-1 PAR
+    Jpm2ph,          // J    m-2 h-1 PAR
+    Wpm2,            // W    m-2     PAR
     umolpm2ps        // µmol m-2 s-1 PAR
 };
 static_assert(
-    static_cast<int>(unit::MJpm2ps)  == 0 &&
-    static_cast<int>(unit::Jpm2ps)   == 1 &&
-    static_cast<int>(unit::Wpm2ps)   == 2 &&
+    static_cast<int>(unit::MJpm2ph)  == 0 &&
+    static_cast<int>(unit::Jpm2ph)   == 1 &&
+    static_cast<int>(unit::Wpm2)     == 2 &&
     static_cast<int>(unit::umolpm2ps)== 3,
     "out_unit order must match conversion pipeline"
 );
@@ -59,10 +57,20 @@ static_assert(
  * @brief 
  * 
  * @param value    input value to be converted [MJ m-2 h-1]
- * @param out_unit output unit (supported units: MJpm2ps, Jpm2ps, Wpm2ps, umolpm2ps). Default is hPhoto::unit::MJpm2ps.
+ * @param out_unit output unit (supported units: MJpm2ph, Jpm2ph, Wpm2ps, umolpm2ps). Default is hPhoto::unit::MJpm2ps.
  * @return double converted value
  */
-double convert_MJpm2ps_to_unit(double value, hPhoto::unit out_unit);
+double convert_MJpm2ph_to_unit(double value, hPhoto::unit out_unit);
+
+
+/**
+ * @brief 
+ * 
+ * @param value   input value to be converted
+ * @param in_unit input unit (supported units: MJpm2ph, Jpm2ph, Wpm2ps, umolpm2ps). Default is hPhoto::unit::MJpm2ps.
+ * @return double converted value [MJ m-2 h-1]
+ */
+double convert_unit_to_MJpm2ph(double value, hPhoto::unit in_unit);
 
 
 /**
@@ -158,6 +166,7 @@ struct PAR_radiation_result {
  * 
  * - Spitters CJT,  Toussaint HAJM & Goudriaan J (1986). Separating the diffuse and direct component of global radiation and its implications for modeling canopy photosynthesis. Part I. Components of incoming radiation. Agricultural and Forest Meteorology, 38(1-3), 217-229.
  *   https://doi.org/10.1016/0168-1923(86)90060-2
+ * 
  * - Ma Lu S, Zainali S, Stridh B, Avelin A, Amaducci S, Colauzzi M & Campana, PE (2022). Photosynthetically active radiation decomposition models for agrivoltaic systems applications. Solar Energy, 244, 536-549.
  *   https://doi.org/10.1016/j.solener.2022.05.046
  * 
@@ -170,7 +179,7 @@ struct PAR_radiation_result {
  * @param out_unit       output unit (supported units: MJpm2ps, Jpm2ps, Wpm2ps, umolpm2ps). Default is hPhoto::unit::MJpm2ps.
  * @return hPhoto::PAR_radiation_result direct [out_unit PAR], diffuse [out_unit PAR]
  */
-PAR_radiation_result PAR_radiation(double global_rad, double extra_terr_rad, double solar_el, bool cscor=true, bool parcor=true, double parfrac=0.45, unit out_unit=unit::MJpm2ps);
+PAR_radiation_result PAR_radiation(double global_rad, double extra_terr_rad, double solar_el, bool cscor=true, bool parcor=true, double parfrac=0.45, unit out_unit=unit::MJpm2ph);
 
 
 struct dL_result {
@@ -380,20 +389,20 @@ double Spitters_A_sl_dL(double A_sh, double Ia_sldr, double Amax_sl, double epsi
 
 
 
-/**
- * @brief Gross assimilation ported from SUCROS87/WOFOST; for testing purposes and compariosn only
- * 
- * using a negative exponential light response curve with negative exponent
- * 
- * @param AMAX   (=A_m) maximum assimilation rate at light saturation (asymptote)
- * @param EFF    (=epsilon) light use efficiency
- * @param LAI    leaf area index
- * @param KDIF   (=kdf) empirical extinction coefficient for diffuse radiation
- * @param SINB   sin(solar_elevation_angle)
- * @param PARDIR (=I0_dr) direct PAR top of the canopy
- * @param PARDIF (=I0_df) diffuse PAR top of the canopy
- * @return double FGROS
- */
-double ASSIM(double AMAX, double EFF, double LAI, double KDIF, double SINB, double PARDIR, double PARDIF);
+// /**
+//  * @brief Gross assimilation ported from SUCROS87/WOFOST; for testing purposes and compariosn only
+//  * 
+//  * using a negative exponential light response curve with negative exponent
+//  * 
+//  * @param AMAX   (=A_m) maximum assimilation rate at light saturation (asymptote)
+//  * @param EFF    (=epsilon) light use efficiency
+//  * @param LAI    leaf area index
+//  * @param KDIF   (=kdf) empirical extinction coefficient for diffuse radiation
+//  * @param SINB   sin(solar_elevation_angle)
+//  * @param PARDIR (=I0_dr) direct PAR top of the canopy
+//  * @param PARDIF (=I0_df) diffuse PAR top of the canopy
+//  * @return double FGROS
+//  */
+// double ASSIM(double AMAX, double EFF, double LAI, double KDIF, double SINB, double PARDIR, double PARDIF);
 
 }

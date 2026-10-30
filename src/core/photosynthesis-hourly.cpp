@@ -6,23 +6,45 @@ using namespace hPhoto;
 using namespace Tools;
 using namespace std;
 
-
-double hPhoto::convert_MJpm2ps_to_unit(double value, hPhoto::unit out_unit)
+double hPhoto::convert_MJpm2ph_to_unit(double value, hPhoto::unit out_unit)
 {
   switch (out_unit) {
   case hPhoto::unit::umolpm2ps:
       // W m-2 -> µmol m-2 s-1
       value *= 4.56;
       [[fallthrough]];
-  case hPhoto::unit::Wpm2ps:
+  case hPhoto::unit::Wpm2:
       // J m-2 h-1 -> W m-2
       value /= 3600.0;
       [[fallthrough]];
-  case hPhoto::unit::Jpm2ps:
+  case hPhoto::unit::Jpm2ph:
       // MJ m-2 h-1 -> J m-2 h-1
       value *= 1e6;
       [[fallthrough]];
-  case hPhoto::unit::MJpm2ps:
+  case hPhoto::unit::MJpm2ph:
+      // base unit — no conversion
+      break;
+  }
+  return value;
+}
+
+
+double hPhoto::convert_unit_to_MJpm2ph(double value, hPhoto::unit in_unit)
+{
+  switch (in_unit) {
+  case hPhoto::unit::umolpm2ps:
+      // µmol m-2 s-1 -> W m-2
+      value /= 4.56;
+      [[fallthrough]];
+  case hPhoto::unit::Wpm2:
+      // W m-2 -> J m-2 h-1
+      value *= 3600.0;
+      [[fallthrough]];
+  case hPhoto::unit::Jpm2ph:
+      // J m-2 h-1 -> MJ m-2 h-1
+      value /= 1e6;
+      [[fallthrough]];
+  case hPhoto::unit::MJpm2ph:
       // base unit — no conversion
       break;
   }
@@ -144,8 +166,8 @@ hPhoto::PAR_radiation_result hPhoto::PAR_radiation(double global_rad, double ext
   hourly_diffuse_rad *= parfrac;
   hourly_direct_rad  *= parfrac;
 
-  result.diffuse = convert_MJpm2ps_to_unit(hourly_diffuse_rad, out_unit);
-  result.direct = convert_MJpm2ps_to_unit(hourly_direct_rad, out_unit);
+  result.diffuse = convert_MJpm2ph_to_unit(hourly_diffuse_rad, out_unit);
+  result.direct = convert_MJpm2ph_to_unit(hourly_direct_rad, out_unit);
   return result;
 }
 
@@ -293,8 +315,8 @@ dL_result hPhoto::Spitters_canop_photo_dL(double beta, double L, double I0_dr, d
   // double f_sl = exp(-k_bl * L) * clusterfactor;   // Spitters et al. 1989, p. 154 seems to use eq. 19 (Spitters 1986), corrected with clusterfactor (Spitters et al. 1989, p. 171)
   /* FS: This seems somewhat strange, since k_bl has already been corrected with clusterfactor before (k_bl = 0.5 / sinbeta * clusterfactor),
       so Spitters et al. 1989, p. 154 (=SUCROS87?) seem to do f_sl = np.exp(-(0.5 / sinbeta * clusterfactor) * L) * clusterfactor
-      WOFOST however just uses f_sl = np.exp(-k_bl * L), which is np.exp(-(0.5 / sinbeta * clusterfactor) * L) in the FORTRAN version (https://github.com/ajwdewit/WOFOST/blob/deac197d3c74741832b815581699a6c825894758/sources/w60lib/assim.for#L81)
-      as well as the python versions (pcse assim7 and assim8, see https://github.com/ajwdewit/pcse/blob/4d9f0e4f542e9062db338aaf1a227a75f1b03949/pcse/crop/assimilation.py#L147 and https://github.com/ajwdewit/pcse/blob/4d9f0e4f542e9062db338aaf1a227a75f1b03949/pcse/crop/assimilation.py#L387)
+      WOFOST however just uses f_sl = exp(-k_bl * L), which is exp(-(0.5 / sinbeta * clusterfactor) * L) in the FORTRAN version (https://github.com/ajwdewit/WOFOST/blob/deac197d3c74741832b815581699a6c825894758/sources/w60lib/assim.for#L81)
+      as well as the python versions (WOFOST-PCSE assim7 and assim8, see https://github.com/ajwdewit/pcse/blob/4d9f0e4f542e9062db338aaf1a227a75f1b03949/pcse/crop/assimilation.py#L147 and https://github.com/ajwdewit/pcse/blob/4d9f0e4f542e9062db338aaf1a227a75f1b03949/pcse/crop/assimilation.py#L387)
   */
 
   // // eq. 18
@@ -517,51 +539,51 @@ double Spitters_A_sl_dL(double A_sh, double Ia_sldr, double Amax_sl, double epsi
 // }
 
 
-double hPhoto::ASSIM(double AMAX, double EFF, double LAI, double KDIF, double SINB, double PARDIR, double PARDIF) {
-  // Gaussian points and weights
-  static const double XGAUSS[3] = {0.1127017, 0.5, 0.8872983};
-  static const double WGAUSS[3] = {0.2777778, 0.4444444, 0.2777778};
-  static const double SCV = 0.2;
+// double hPhoto::ASSIM(double AMAX, double EFF, double LAI, double KDIF, double SINB, double PARDIR, double PARDIF) {
+//   // Gaussian points and weights
+//   static const double XGAUSS[3] = {0.1127017, 0.5, 0.8872983};
+//   static const double WGAUSS[3] = {0.2777778, 0.4444444, 0.2777778};
+//   static const double SCV = 0.2;
 
-  // --- Extinction coefficients ---
-  double REFH   = (1.0 - std::sqrt(1.0 - SCV)) / (1.0 + std::sqrt(1.0 - SCV));
-  double REFS   = REFH * 2.0 / (1.0 + 1.6 * SINB);
+//   // --- Extinction coefficients ---
+//   double REFH   = (1.0 - std::sqrt(1.0 - SCV)) / (1.0 + std::sqrt(1.0 - SCV));
+//   double REFS   = REFH * 2.0 / (1.0 + 1.6 * SINB);
 
-  double KDIRBL = (0.5 / SINB) * KDIF / (0.8 * std::sqrt(1.0 - SCV));
-  double KDIRT  = KDIRBL * std::sqrt(1.0 - SCV);
+//   double KDIRBL = (0.5 / SINB) * KDIF / (0.8 * std::sqrt(1.0 - SCV));
+//   double KDIRT  = KDIRBL * std::sqrt(1.0 - SCV);
 
-  // --- Gaussian integration over canopy depth ---
-  double FGROS = 0.0;
-  for (int i = 0; i < 3; ++i) {
-    double LAIC = LAI * XGAUSS[i];
+//   // --- Gaussian integration over canopy depth ---
+//   double FGROS = 0.0;
+//   for (int i = 0; i < 3; ++i) {
+//     double LAIC = LAI * XGAUSS[i];
 
-    // Absorbed radiation components (J m-2 s-1)
-    double VISDF  = (1.0 - REFS) * PARDIF * KDIF   * std::exp(-KDIF   * LAIC);
-    double VIST   = (1.0 - REFS) * PARDIR * KDIRT  * std::exp(-KDIRT  * LAIC);
-    double VISD   = (1.0 - SCV ) * PARDIR * KDIRBL * std::exp(-KDIRBL * LAIC);
+//     // Absorbed radiation components (J m-2 s-1)
+//     double VISDF  = (1.0 - REFS) * PARDIF * KDIF   * std::exp(-KDIF   * LAIC);
+//     double VIST   = (1.0 - REFS) * PARDIR * KDIRT  * std::exp(-KDIRT  * LAIC);
+//     double VISD   = (1.0 - SCV ) * PARDIR * KDIRBL * std::exp(-KDIRBL * LAIC);
 
-    // Shaded leaves
-    double VISSHD = VISDF + VIST - VISD;
-    double FGRSH  = AMAX *
-        (1.0 - std::exp(-VISSHD * EFF / std::max(2.0, AMAX)));
+//     // Shaded leaves
+//     double VISSHD = VISDF + VIST - VISD;
+//     double FGRSH  = AMAX *
+//         (1.0 - std::exp(-VISSHD * EFF / std::max(2.0, AMAX)));
 
-    // Sunlit leaves
-    double VISPP = (1.0 - SCV) * PARDIR / SINB;
-    double FGRSUN;
-    if (VISPP <= 0.0) {
-      FGRSUN = FGRSH;
-    } else {
-      FGRSUN = AMAX *
-                (1.0 - (AMAX - FGRSH) *
-                (1.0 - std::exp(-VISPP * EFF / std::max(2.0, AMAX))) /
-                (EFF * VISPP));
-    }
+//     // Sunlit leaves
+//     double VISPP = (1.0 - SCV) * PARDIR / SINB;
+//     double FGRSUN;
+//     if (VISPP <= 0.0) {
+//       FGRSUN = FGRSH;
+//     } else {
+//       FGRSUN = AMAX *
+//                 (1.0 - (AMAX - FGRSH) *
+//                 (1.0 - std::exp(-VISPP * EFF / std::max(2.0, AMAX))) /
+//                 (EFF * VISPP));
+//     }
 
-    double FSLLA = std::exp(-KDIRBL * LAIC);              // Fraction sunlit leaf area
-    double FGL = FSLLA * FGRSUN + (1.0 - FSLLA) * FGRSH;  // Local assimilation rate
+//     double FSLLA = std::exp(-KDIRBL * LAIC);              // Fraction sunlit leaf area
+//     double FGL = FSLLA * FGRSUN + (1.0 - FSLLA) * FGRSH;  // Local assimilation rate
 
-    FGROS += FGL * WGAUSS[i];
-  }
+//     FGROS += FGL * WGAUSS[i];
+//   }
 
-  return FGROS *= LAI;  // Multiply by total LAI
-}
+//   return FGROS *= LAI;  // Multiply by total LAI
+// }
