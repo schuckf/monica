@@ -1,19 +1,33 @@
 {
   "version": "2.0.0",
   "tasks": [
-    {
-      "label": "MSBuild: Build Solution x64 Debug",
-      "type": "shell",
-      "command": "\"C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\Tools\\VsDevCmd.bat\" && \"C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\MSBuild\\Current\\Bin\\MSBuild.exe\" \"${workspaceFolder}\\_cmake_win64\\Monica.sln\" /p:Configuration=Debug /p:Platform=x64",
-      "group": {
-        "kind": "build",
-        "isDefault": true
-      },
-      "presentation": {
-        "reveal": "always",
-        "panel": "shared"
-      },
-      "problemMatcher": []
+{
+  "label": "pixi: Reconfigure + Build x64 Debug",
+  "type": "shell",
+  "options": {
+    "cwd": "${workspaceFolder}",
+    "shell": {
+      "executable": "cmd.exe",
+      "args": [
+        "/d",
+        "/c"
+      ]
+    },
+    "env": {
+      "CC": "cl.exe",
+      "CXX": "cl.exe",
+      "PATH": "${workspaceFolder}\\.pixi\\envs\\default\\Library\\bin;${env:PATH}"
     }
+  },
+  "command": "\"\"C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\Tools\\VsDevCmd.bat\" -host_arch=x64 -arch=x64 && where cl && where clang-cl && \"C:\\Users\\hswt906fel\\AppData\\Local\\pixi\\bin\\pixi.exe\" run build -- --debug --reconfigure\"",
+  "presentation": {
+    "reveal": "always",
+    "panel": "shared",
+    "clear": true
+  },
+  "problemMatcher": [
+    "$msCompile"
+  ]
+}
   ]
 }
