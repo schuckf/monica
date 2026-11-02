@@ -1,0 +1,45 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug Monica (cppvsdbg)",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/_cmake_win64/monica-run.exe",
+            "args": ["installer/Hohenfinow2/sim-hp.json"],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [
+                {
+                    "name": "MONICA_PARAMETERS",
+                    "value": "C:/Users/hswt906fel/Documents/GitHub/zalf-rpm/monica-parameters"}
+            ],
+            "console": "internalConsole"
+        },
+        {
+            "name": "Debug MONICA EX478",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/_cmake_win64/monica-run.exe",
+            "args": [
+                "-op",
+                "${workspaceFolder}/../de_calibration/debug_runs/EX478",
+                "-o",
+                "${workspaceFolder}/../de_calibration/debug_runs/EX478/monica-output.csv",
+                "${workspaceFolder}/../de_calibration/debug_runs/EX478/sim.json"
+            ],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/../de_calibration/debug_runs/EX478",
+            "environment": [
+                {
+                    "name": "MONICA_PARAMETERS",
+                    "value": "${workspaceFolder}/../monica-parameters"
+                }
+            ],
+            "console": "internalConsole"
+        }
+    ]
+}
