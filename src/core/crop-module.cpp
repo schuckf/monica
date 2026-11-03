@@ -1508,26 +1508,48 @@ void CropModule::step(double vw_MeanAirTemperature, double vw_MaxAirTemperature,
       //     reducing consistency with default daily MONICA increases. So for now, the simpest
       //     solution might be to outsource the temperature effects of Agri-PV to the input data
       //     vw_MaxAirTemperature and vw_MinAirTemperature, which are to be provided by the user.
-      // @ToDo FS: Check in the original articles if the theory behind this could be adapted to
+      // @ToDo FS: Check in the original articles how the theory behind this could be adapted to
       // hourly resolution.
 
-      /* FS: moved outside the if hourly/else block
-      // // fc_HeatStressImpact_h(vc_PhotoTemperature_h);
-      // fc_HeatStressImpact(vw_MaxAirTemperature, vw_MinAirTemperature);
+      fc_HeatStressImpact(vw_MaxAirTemperature,
+                          vw_MinAirTemperature);  // FS: This calculates vc_CropHeatRedux, which
+                                                  // affects CropModule::fc_CropDryMatter(...)
+                                                  // daily version uses vc_PhotoTemperature
+                                                  // (keep this until vc_PhotoTemperature_h is added)
 
-      // if (_frostKillOn) {
-      //   // fc_FrostKill_h(vc_CrownTemperature_h);  // daily version calculates
-      vc_CrownTemperature = vc_NightTemperature * 0.8 internally, with night temperature being also
-      averaged internally
-      //   fc_FrostKill(vw_MaxAirTemperature, vw_MinAirTemperature);
-      // }
+      if (_frostKillOn) {
+        fc_FrostKill(vw_MaxAirTemperature,
+                     vw_MinAirTemperature); // FS: This calculates vc_CropFrostRedux, getting more
+                                            // severe based on number of days below -3°?
+                                            // daily version calculates vc_CrownTemperature = 
+                                            // vc_NightTemperature * 0.8 internally, with night
+                                            // temperature being also averaged internally
+                                            // (keep this until vc_CrownTemperature_h is implemented)
+      }
 
-      // fc_DroughtImpactOnFertility();
+      fc_DroughtImpactOnFertility(); // FS: This calculates vc_DroughtImpactOnFertility, which affects
+                                    // CropModule::fc_CropDryMatter(...)
+                                    //     vc_DroughtImpactOnFertility is f(vc_TranspirationDeficit,
+                                    //     vc_OxygenDeficit) with vc_DroughtImpactOnFertility = 1.0
+                                    //     (ignored) if vc_OxygenDeficit is active (vc_OxygenDeficit
+                                    //     < 1.0)
 
-      // fc_CropNitrogen_h();
+      fc_CropNitrogen(); // FS: This calculates vc_CropNRedux, which affects
+                        // CropModule::fc_CropDevelopmentalStage(...) and
+                        // CropModule::fc_CropDryMatter(...)
 
-      // fc_CropDryMatter_h(vw_MeanAirTemperature_h);
-      */
+      fc_CropDryMatter(
+          vw_MeanAirTemperature); // FS: this depends on vc_CropHeatRedux, vc_DroughtImpactOnFertility
+                                  // and vc_CropNRedux
+                                  // CropModule::fc_CropDryMatter(...) uses the vc_KTkc CropModule 
+                                  // attr, so when moving to hourly photosynthesis:
+                                  // - either make sure that vc_KTkc has been updated with a valid
+                                  //   value (e.g. using get<0>(...) on
+                                  //   CropModule::vc_KTkc_vc_KTko(vw_MeanAirTemperature) or by
+                                  //   actually averaging hourly KTkc values)
+                                  // - or create an hourly method CropModule::fc_CropDryMatter_h(...)
+                                  //   which calculates vc_KTkc_h internally (e.g. using get<0>(...)
+                                  //   on CropModule::vc_KTkc_vc_KTko(vw_MeanAirTemperature_h))
 
 #pragma endregion hourly overclocked
     } else {
@@ -1535,21 +1557,19 @@ void CropModule::step(double vw_MeanAirTemperature, double vw_MaxAirTemperature,
                             vw_AtmosphericCO2Concentration, vw_AtmosphericO3Concentration,
                             currentDate, vw_WindSpeed);
 
-      /* FS: moved outside the if hourly/else block
-      // fc_HeatStressImpact(vw_MaxAirTemperature,
-      //                     vw_MinAirTemperature);
+      fc_HeatStressImpact(vw_MaxAirTemperature,
+                          vw_MinAirTemperature);
 
-      // if (_frostKillOn) {
-      //   fc_FrostKill(vw_MaxAirTemperature,
-      //               vw_MinAirTemperature);
-      // }
+      if (_frostKillOn) {
+        fc_FrostKill(vw_MaxAirTemperature,
+                    vw_MinAirTemperature);
+      }
 
-      // fc_DroughtImpactOnFertility();
+      fc_DroughtImpactOnFertility();
 
-      // fc_CropNitrogen();
+      fc_CropNitrogen();
 
-      // fc_CropDryMatter(vw_MeanAirTemperature);
-      */
+      fc_CropDryMatter(vw_MeanAirTemperature);
 
       // calculate reference evapotranspiration if not provided directly via climate files
       if (vw_ReferenceEvapotranspiration < 0) {
@@ -1582,43 +1602,6 @@ void CropModule::step(double vw_MeanAirTemperature, double vw_MaxAirTemperature,
         soilColumn.vm_GroundwaterTableLayer, vc_ReferenceEvapotranspiration_na,
         vc_InterceptionStorage, 6.5);
     // */
-
-    fc_HeatStressImpact(vw_MaxAirTemperature,
-                        vw_MinAirTemperature); // FS: This calculates vc_CropHeatRedux, which
-                                               // affects CropModule::fc_CropDryMatter(...)
-
-    if (_frostKillOn) {
-      fc_FrostKill(vw_MaxAirTemperature,
-                   vw_MinAirTemperature); // FS: This calculates vc_CropFrostRedux, getting more
-                                          // severe based on number of days below -3°?
-    }
-
-    fc_DroughtImpactOnFertility(); // FS: This calculates vc_DroughtImpactOnFertility, which affects
-                                   // CropModule::fc_CropDryMatter(...)
-                                   //     vc_DroughtImpactOnFertility is f(vc_TranspirationDeficit,
-                                   //     vc_OxygenDeficit) with vc_DroughtImpactOnFertility = 1.0
-                                   //     (ignored) if vc_OxygenDeficit is active (vc_OxygenDeficit
-                                   //     < 1.0)
-
-    fc_CropNitrogen(); // FS: This calculates vc_CropNRedux, which affects
-                       // CropModule::fc_CropDevelopmentalStage(...) and
-                       // CropModule::fc_CropDryMatter(...)
-
-    fc_CropDryMatter(
-        vw_MeanAirTemperature); // FS: this depends on vc_CropHeatRedux, vc_DroughtImpactOnFertility
-                                // and vc_CropNRedux
-                                //     CropModule::fc_CropDryMatter(...) uses the vc_KTkc CropModule
-                                //     attr, so when moving to hourly photosynthesis:
-                                //     - either make sure that vc_KTkc has been updated with a valid
-                                //     value
-                                //       (e.g. using get<0>(...) on
-                                //       CropModule::vc_KTkc_vc_KTko(vw_MeanAirTemperature) or by
-                                //       actually averaging hourly KTkc values)
-                                //     - or create an hourly method
-                                //     CropModule::fc_CropDryMatter_h(...) which calculates
-                                //     vc_KTkc_h internally
-                                //       (e.g. using get<0>(...) on
-                                //       CropModule::vc_KTkc_vc_KTko(vw_MeanAirTemperature_h))
 
     fc_CropNUptake(soilColumn.vm_GroundwaterTableLayer, vc_CurrentTotalTemperatureSum,
                    vc_TotalTemperatureSum);
@@ -5404,16 +5387,15 @@ double CropModule::fc_ReferenceEvapotranspiration_h(
   } else { // night time fallback: use time period 2-3 hours before sunset
     vc_ClearSkyShortwaveRadiation_h =
         (0.75 + 0.00002 * vs_HeightNN) * vc_ExtraterrestrialRadiation_3h_b4_sunseth;
-    vc_RelativeShortwaveRadiation_h =
-        (vc_ClearSkyShortwaveRadiation_h > 0.0)
-            ? vc_GlobalRadiation_3h_b4_sunseth / vc_ClearSkyShortwaveRadiation_h
-            : 0.6; // approx. 0.4 to 0.6 during nighttime periods in humid and subhumid climates and
-                   // 0.7 to 0.8 in arid and semiarid climates
-  }
 
   // keep between 0.33 (total cloud cover) and 1.0,
   // see https://www.fao.org/4/x0490e/x0490e07.htm#radiation (FAO-56)
-  vc_RelativeShortwaveRadiation_h = bound(0.33, vc_RelativeShortwaveRadiation_h, 1.0);
+    vc_RelativeShortwaveRadiation_h =
+        (vc_ClearSkyShortwaveRadiation_h > 0.0)
+            ? bound(0.33, vc_GlobalRadiation_3h_b4_sunseth / vc_ClearSkyShortwaveRadiation_h, 1.0)
+            : 0.6; // approx. 0.4 to 0.6 during nighttime periods in humid and subhumid climates and
+                   // 0.7 to 0.8 in arid and semiarid climates
+  }
 
   double vc_NetShortwaveRadiation_h = (1.0 - pc_ReferenceAlbedo) * vc_GlobalRadiation_h;
                               // @ToDo FS: Should global radiation used here be
