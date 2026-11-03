@@ -626,9 +626,9 @@ public:
   double vc_PotentialTranspirationDeficit_h{ 0.0 };                         // FS: hourly
   double vc_ActualTranspirationDeficit_h{ 0.0 };                            // FS: hourly
   double vc_TranspirationReduced_h{ 0.0 };                                  // FS: hourly
-  std::vector<double> scp_FieldCapacity;                                    // FS test
-  std::vector<double> scp_PermanentWiltingPoint;                            // FS test
-  std::vector<double> vc_AvailableWaterPercentage_num_remaining;            // FS test
+  std::vector<double> scp_FieldCapacity;                                    // FS: hourly
+  std::vector<double> scp_PermanentWiltingPoint;                            // FS: hourly
+  std::vector<double> vc_AvailableWaterPercentage_num_remaining;            // FS: hourly
 
 private:
   Intercropping& _intercropping;
@@ -808,7 +808,7 @@ private:
   double vc_ReferenceEvapotranspiration{0.0};
   double vc_RelativeTotalDevelopment{0.0};
   double vc_RemainingEvapotranspiration{0.0};
-  double vc_RemainingEvapotranspiration_h{0.0};                             // FS test
+  double vc_RemainingEvapotranspiration_h{0.0};                             // FS: hourly
   double vc_ReserveAssimilatePool{0.0}; //! old ASPOO
   double pc_ResidueNRatio{};
   double pc_RespiratoryStress{};
@@ -818,7 +818,7 @@ private:
   std::vector<double> vc_RootDiameter; //! old WRAD
   double pc_RootDistributionParam{};
   std::vector<double> vc_RootEffectivity; //! old WUEFF
-  std::vector<double> vc_RootEffectivity_h;                                 // FS test
+  std::vector<double> vc_RootEffectivity_h;                                 // FS: hourly
   double pc_RootFormFactor{};
   double pc_RootGrowthLag{};
   size_t vc_RootingDepth{0}; //! old WURZ
@@ -873,8 +873,8 @@ private:
   double vc_TemperatureSumToFlowering{0.0};
   std::vector<double> vc_Transpiration; //! old TP
   std::vector<double> vc_TranspirationRedux; //! old TRRED
-  std::vector<double> vc_Transpiration_h;                                   // FS test
-  std::vector<double> vc_TranspirationRedux_h;                              // FS test
+  std::vector<double> vc_Transpiration_h;                                   // FS: hourly
+  std::vector<double> vc_TranspirationRedux_h;                              // FS: hourly
   double vc_VernalisationDays{0.0}; //
   double vc_VernalisationFactor{0.0}; //! old FV
   std::vector<double> pc_VernalisationRequirement; //! old VSCHWELL

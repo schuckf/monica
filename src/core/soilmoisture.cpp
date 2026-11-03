@@ -300,7 +300,7 @@ void SoilMoisture::step(double vs_GroundwaterDepth,
     vc_CropHeight = monica.cropGrowth()->get_CropHeight();
     vc_DevelopmentalStage = (int)monica.cropGrowth()->get_DevelopmentalStage();
     if (vc_DevelopmentalStage > 0) {
-      vc_NetPrecipitation = monica.cropGrowth()->get_NetPrecipitation();                                      // FS test
+      vc_NetPrecipitation = monica.cropGrowth()->get_NetPrecipitation();                                      // FS: this reads from the crop module
     } else {
       vc_NetPrecipitation = vw_Precipitation;
     }
@@ -999,15 +999,15 @@ void SoilMoisture::fm_Evapotranspiration(double vc_PercentageSoilCoverage, doubl
     // Reference evapotranspiration is only grabbed here for consistent
     // output in monica.cpp
     if (vw_ReferenceEvapotranspiration < 0.0) {
-      vm_ReferenceEvapotranspiration = monica.cropGrowth()->get_ReferenceEvapotranspiration();                // FS test
+      vm_ReferenceEvapotranspiration = monica.cropGrowth()->get_ReferenceEvapotranspiration();                // FS: this reads from the crop module
     } else {
       vm_ReferenceEvapotranspiration = vw_ReferenceEvapotranspiration;
     }
 
     // Remaining ET from crop module already includes Kc factor and evaporation
     // from interception storage
-    vm_PotentialEvapotranspiration = monica.cropGrowth()->get_RemainingEvapotranspiration();                  // FS test
-    vc_EvaporatedFromIntercept = monica.cropGrowth()->get_EvaporatedFromIntercept();                          // FS test
+    vm_PotentialEvapotranspiration = monica.cropGrowth()->get_RemainingEvapotranspiration();                  // FS: this reads from the crop module
+    vc_EvaporatedFromIntercept = monica.cropGrowth()->get_EvaporatedFromIntercept();                          // FS: this reads from the crop module
   } else { // if no crop grows ETp is calculated from ET0 * kc
 
     // calculate reference evapotranspiration if not provided via climate files
@@ -1105,31 +1105,8 @@ void SoilMoisture::fm_Evapotranspiration(double vc_PercentageSoilCoverage, doubl
         // EReducer-> factor to reduce evaporation
         vm_EReducer = vm_EReducer_1 * vm_EReducer_2 * vm_EReducer_3;
 
-
-
-// std::cerr
-// << "SOIL MOISTURE B4 CROP BRANCH,"
-// << " stage=" << vc_DevelopmentalStage
-//  << ", cropGrowth=" << (monica.cropGrowth() != nullptr)
-//     << "\n";
-
-
-
         if (vc_DevelopmentalStage > 0) {
           // vegetation is present
-
-
-
-// std::cerr
-// << "SOIL MOISTURE CROP BRANCH ENTERED,"
-// << " stage=" << vc_DevelopmentalStage
-//  << ", cropGrowth=" << (monica.cropGrowth() != nullptr)
-//     << "\n";
-
-
-
-
-
           if (useDualKc) {
             // ---------------------------------------------------------------
             // FAO-56 Dual Kc: soil evaporation = Kr * (Kc_max - Kcb) * ET0
@@ -1154,10 +1131,9 @@ void SoilMoisture::fm_Evapotranspiration(double vc_PercentageSoilCoverage, doubl
 
           // Transpiration is derived from ET0; Soil coverage and Kc factors
           // already considered in crop part!
-          vm_Transpiration[i_Layer] = monica.cropGrowth()->get_Transpiration(i_Layer);                        // FS test: this reads transpiration from the crop module
+          vm_Transpiration[i_Layer] = monica.cropGrowth()->get_Transpiration(i_Layer);                        // FS: this reads from the crop module
 
           //std::cout << setprecision(11) << "vm_Transpiration[i_Layer]: " << i_Layer << ", " << vm_Transpiration[i_Layer] << std::endl;
-          // std::cerr << setprecision(11) << "vm_Transpiration[i_Layer]: " << i_Layer << ", " << vm_Transpiration[i_Layer] << std::endl;
 
           // Transpiration is capped in case potential ET after surface
           // and interception evaporation has occurred on same day
@@ -1175,7 +1151,7 @@ void SoilMoisture::fm_Evapotranspiration(double vc_PercentageSoilCoverage, doubl
         } // if(vc_DevelopmentalStage > 0)
 
         vm_Evapotranspiration[i_Layer] = vm_Evaporation[i_Layer] + vm_Transpiration[i_Layer];
-        vm_SoilMoisture[i_Layer] -= (vm_Evapotranspiration[i_Layer] / 1000.0 / vm_LayerThickness[i_Layer]);   //FS: soil moisture is modified here!
+        vm_SoilMoisture[i_Layer] -= (vm_Evapotranspiration[i_Layer] / 1000.0 / vm_LayerThickness[i_Layer]);   //FS: soil moisture is modified inplace here!
 
         //  Generelle Begrenzung des Evaporationsentzuges
         if (vm_SoilMoisture[i_Layer] < 0.01) {
@@ -1325,7 +1301,7 @@ double SoilMoisture::ReferenceEvapotranspiration(double vs_HeightNN, double vw_M
   double vc_ClearSkySolarRadiation = (0.75 + 0.00002 * vs_HeightNN) * vc_ExtraterrestrialRadiation;
   double vc_RelativeShortwaveRadiation = vc_ClearSkySolarRadiation > 0
                                            ? min(vw_GlobalRadiation / vc_ClearSkySolarRadiation, 1.0)
-                                           : 1.0;
+                                           : 1.0; // @ToDo FS: bound(0.33, ..., 1.0);
 
   double pc_BolzmannConstant = 0.0000000049;
   double vc_ShortwaveRadiation = (1.0 - pc_ReferenceAlbedo) * vw_GlobalRadiation;

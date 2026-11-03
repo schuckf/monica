@@ -871,8 +871,6 @@ void CropModule::step(double vw_MeanAirTemperature, double vw_MaxAirTemperature,
     vc_DaysSinceTransplant = -1; // Recovery period has successfully concluded
   }
 
-  //  cout << "Cropstep: " << vw_MinAirTemperature << "\t" << vw_MaxAirTemperature << "\t" <<
-  //  vw_MeanAirTemperature << endl;
   fc_Radiation(vs_JulianDay, vw_GlobalRadiation,
                vw_SunshineHours); // FS: this also updates CropModule::vc_PhotoperiodicDaylength
 
@@ -1350,25 +1348,11 @@ void CropModule::step(double vw_MeanAirTemperature, double vw_MaxAirTemperature,
           accumulate(hourly_ActualTranspiration_d.begin(), hourly_ActualTranspiration_d.end(), 0.);
       vc_PotentialTranspiration = accumulate(hourly_PotentialTranspiration_d.begin(),
                                              hourly_PotentialTranspiration_d.end(), 0.);
-      // std::cerr << "---- " << currentDate.toIsoDateString() << " ----\n"
-      //           << "ActTransp (based on hourly agg): " << vc_ActualTranspiration << std::endl
-      //           << "PotTransp (based on hourly agg): " << vc_PotentialTranspiration << std::endl;
       vc_TranspirationDeficit = (vc_PotentialTranspiration > 0)
                                     ? vc_ActualTranspiration / vc_PotentialTranspiration
                                     : 1.0;
       vc_InterceptionStorage = vc_InterceptionStorage_remaining;
       vc_RemainingEvapotranspiration = vc_RemainingEvapotranspiration_d;
-
-      /* FS: for comparison only: including the HERMES daily 6.5mm cap for ETp
-      double vc_PotentialEvapotranspiration = vc_ReferenceEvapotranspiration * vc_KcFactor;
-      if (vc_PotentialEvapotranspiration > 6.5) {
-        vc_PotentialEvapotranspiration = 6.5;
-      }
-      double vc_RemainingEvapotranspiration_ =  max(0.0, vc_PotentialEvapotranspiration -
-      vc_EvaporatedFromIntercept); std::cerr << currentDate.toIsoDateString() << "RemainingET vs
-      capped : " << vc_RemainingEvapotranspiration << "," << vc_RemainingEvapotranspiration_ <<
-      endl;
-      */
 
       // CropModule::fc_CropDryMatter(...) uses the (daily) vc_KTkc CropModule attr
       if ((pc_CarboxylationPathway == 1) && (pc_CO2Method == 3)) {
@@ -1583,21 +1567,7 @@ void CropModule::step(double vw_MeanAirTemperature, double vw_MaxAirTemperature,
                                    //     CropModule::fc_DroughtImpactOnFertility()
     }
 
-    // @ToDo FS: Do I understand this correctly?
-    //           Daily stressors (pc_FieldConditionModifier, vc_OxygenDeficit,
-    //           vc_TranspirationDeficit) are applied directly in the photosynthesis code (e.g. in
-    //           CropModule::fc_CropPhotosynthesis(...) for the daily version):
-    //           - pc_FieldConditionModifier is taken form a parameter file, so keep it daily?
-    //           - vc_OxygenDeficit is calculated at the start of CropModule::step(...), and applied
-    //           within the photosynthesis
-    //           - vc_TranspirationDeficit is calculated after
-    //           CropModule::fc_CropPhotosynthesis(...) via CropModule::fc_CropWaterUptake(...),
-    //             so it applies the drought stress based on the previous time step? -> hourly
-    //             version fc_CropWaterUptake_h(...) placed inside the hourly loop and calculated
-    //             averaged transpiration deficit for the day afterwards for use with other (daily)
-    //             stress factors
-
-    // /* for comparison/debugging only
+    /* for comparison/debugging only
     double vc_ReferenceEvapotranspiration_na;
     // calculate reference evapotranspiration if not provided directly via climate files
     if (vw_ReferenceEvapotranspiration < 0) {
@@ -1611,15 +1581,6 @@ void CropModule::step(double vw_MeanAirTemperature, double vw_MaxAirTemperature,
     auto [vc_Transpiration_na, vc_TranspirationDeficit_na] = fc_CropWaterUptake_notApplied(
         soilColumn.vm_GroundwaterTableLayer, vc_ReferenceEvapotranspiration_na,
         vc_InterceptionStorage, 6.5);
-    // std::cerr << "---- " << currentDate.toIsoDateString() << " daily vs hourlyagg ---- \n"
-    //           << "RefET: " << vc_ReferenceEvapotranspiration_na << "     " <<
-    //           vc_ReferenceEvapotranspiration << std::endl
-    //           << "TranspDef: " << vc_TranspirationDeficit_na  << "     " <<
-    //           vc_TranspirationDeficit << std::endl;
-    // for (size_t i=0; i < vc_Transpiration_na.size(); ++i) std:: cerr << "Transp. Layer" << i <<
-    // ": " << vc_Transpiration_na.at(i) << "     " << vc_Transpiration.at(i) << std::endl;
-    // std::cerr << currentDate.toIsoDateString() << "," << vc_ReferenceEvapotranspiration_na << ","
-    // << vc_ReferenceEvapotranspiration << std::endl;
     // */
 
     fc_HeatStressImpact(vw_MaxAirTemperature,
@@ -5212,18 +5173,9 @@ double CropModule::fc_ReferenceEvapotranspiration(double vw_MaxAirTemperature,
       vc_ClearSkyShortwaveRadiation > 0
           ? std::min(vc_GlobalRadiation / vc_ClearSkyShortwaveRadiation, 1.0)
           : 1.0;
-  // FS: potential bugfix:
-  // -> this might be paritally solved in MONICA 3.7.1 since vc_RelativeShortwaveRadiation is capped
-  // at 1.0 (similar to the FA=-56 implementation in SoilMoisture::ReferenceEvapotranspiration(...))
-  // -> however, there still seems to be no lower bound preventing vc_RelativeShortwaveRadiation <
-  // 0.26 in ... * (1.35 * vc_RelativeShortwaveRadiation - 0.35) * ..., which could still lead
-  // physically implausible negative longwave emission in vw_NetRadiation caclulation
-  vc_RelativeShortwaveRadiation = bound(
-      0.3, vc_RelativeShortwaveRadiation,
-      1.0); // FS: ~ 0.3 is total cloud cover, and anything below that could lead to physically
-            // implausible longwave emission in vw_NetRadiation caclulation
-            //     Not sure yet if capping vc_RelativeShortwaveRadiation or directly capping the
-            //     longwave emmission in vw_NetRadiation calculation below is the correct move here!
+
+  // FAO-56 suggests 0.33 is total cloud cover
+  vc_RelativeShortwaveRadiation = bound(0.33, vc_RelativeShortwaveRadiation, 1.0);
 
   double vc_NetShortwaveRadiation = (1.0 - pc_ReferenceAlbedo) * vc_GlobalRadiation;
 
@@ -5461,20 +5413,14 @@ double CropModule::fc_ReferenceEvapotranspiration_h(
                    // 0.7 to 0.8 in arid and semiarid climates
   }
 
-  // FS: potential bugfix:
-  vc_RelativeShortwaveRadiation_h = bound(
-      0.3, vc_RelativeShortwaveRadiation_h,
-      1.0); // FS: ~ 0.3 is total cloud cover, and anything below that could lead to physically
-            // implausible longwave emission in vw_NetRadiation_h caclulation
-            //     Not sure yet if capping vc_RelativeShortwaveRadiation or directly capping the
-            //     longwave emmission in vw_NetRadiation calculation below is the correct move here!
+  // FAO-56 suggests 0.33 is total cloud cover
+  vc_RelativeShortwaveRadiation_h = bound(0.33, vc_RelativeShortwaveRadiation_h, 1.0);
 
-  double vc_NetShortwaveRadiation_h =
-      (1.0 - pc_ReferenceAlbedo) *
-      vc_GlobalRadiation_h; // FS: Similar question here: Should global radiation used here be
-                            // affected by Agri-PV or not?
-                            // @ToDo FS: For Agri-PV, use reduced global radiation, since shading
-                            // leads to less shortwave radiation and therefore less ET.
+  double vc_NetShortwaveRadiation_h = (1.0 - pc_ReferenceAlbedo) * vc_GlobalRadiation_h;
+                              // @ToDo FS: Should global radiation used here be
+                              // affected by Agri-PV or not?
+                              // @ToDo FS: For Agri-PV, use reduced global radiation, since shading
+                              // leads to less shortwave radiation and therefore less ET.
 
   // for hourly time steps, according to Chapter 4 - Determination of ETo, Penman-Monteith equation
   // -> ETo calculated with different time steps
@@ -5499,10 +5445,6 @@ double CropModule::fc_ReferenceEvapotranspiration_h(
                             ? ((is_daytime) ? 0.1 * vw_NetRadiation_h : 0.5 * vw_NetRadiation_h)
                             : 0.0; // (eq.45 and eq.46)
 
-  // std::cerr << vc_GlobalRadiation_h << "," << vc_ClearSkyShortwaveRadiation_h << "," <<
-  // vc_RelativeShortwaveRadiation_h << "," << vc_NetShortwaveRadiation_h << "," <<
-  // vw_NetRadiation_h << "," << soilHeatflux << std::endl;
-
   // Calculation of reference evapotranspiration
   // Penman-Monteith-Method FAO (eq.53)
   vc_ReferenceEvapotranspiration_h =
@@ -5514,29 +5456,6 @@ double CropModule::fc_ReferenceEvapotranspiration_h(
         vc_SaturationDeficit)) /
       (vc_SaturatedVapourPressureSlope_h +
        vc_PsycrometerConstant * (1.0 + (vc_SurfaceResistance_h / vc_AerodynamicResistance_h)));
-
-  /*
-  const double radiationTerm_h = 0.408 * vc_SaturatedVapourPressureSlope_h *
-  (vw_NetRadiation_h-soilHeatflux); const double aerodynamicTerm_h = vc_PsycrometerConstant * (37.0
-  * vc_OverclockingTimeStep / (vw_MeanAirTemperature_h + 273.0)) * vc_WindSpeed_h_2m *
-  vc_SaturationDeficit; const double denominator_h = vc_SaturatedVapourPressureSlope_h +
-  vc_PsycrometerConstant * (1.0 + (vc_SurfaceResistance_h / vc_AerodynamicResistance_h)); const
-  double rawET_h = (radiationTerm_h + aerodynamicTerm_h) / denominator_h; std::cerr << "hourly refET
-  debug: "
-      << vw_MeanAirTemperature_h << ","
-      << vc_SaturatedVapourPressure_h << ","
-      << vc_VapourPressure_h << ","
-      << vc_SaturationDeficit << ","
-      << vc_SaturatedVapourPressureSlope_h << ","
-      << vc_WindSpeed_h_2m << ","
-      << vc_SurfaceResistance_h << ","
-      << vc_AerodynamicResistance_h << ","
-      << radiationTerm_h << ","
-      << aerodynamicTerm_h << ","
-      << denominator_h << ","
-      << rawET_h
-      << '\n';
-  */
 
   if (vc_ReferenceEvapotranspiration_h < 0.0) {
     vc_ReferenceEvapotranspiration_h = 0.0;
@@ -5664,13 +5583,8 @@ double CropModule::fc_ReferenceEvapotranspiration_notApplied(
   double vc_RelativeShortwaveRadiation =
       vc_ClearSkyShortwaveRadiation > 0 ? vc_GlobalRadiation / vc_ClearSkyShortwaveRadiation : 0;
 
-  // FS: potential bugfix:
-  vc_RelativeShortwaveRadiation = bound(
-      0.3, vc_RelativeShortwaveRadiation,
-      1.0); // FS: ~ 0.3 is total cloud cover, and anything below that could lead to physically
-            // implausible longwave emission in vw_NetRadiation caclulation
-            //     Not sure yet if capping vc_RelativeShortwaveRadiation or directly capping the
-            //     longwave emmission in vw_NetRadiation calculation below is the correct move here!
+  // FAO-56 suggests 0.33 is total cloud cover
+  vc_RelativeShortwaveRadiation = bound(0.333, vc_RelativeShortwaveRadiation, 1.0);
 
   double vc_NetShortwaveRadiation = (1.0 - pc_ReferenceAlbedo) * vc_GlobalRadiation;
 
@@ -5682,10 +5596,6 @@ double CropModule::fc_ReferenceEvapotranspiration_notApplied(
        2.0 * (1.35 * vc_RelativeShortwaveRadiation - 0.35) *
        (0.34 - 0.14 * sqrt(vc_VapourPressure)));
 
-  // std::cerr << vc_GlobalRadiation << "," << vc_ClearSkyShortwaveRadiation << "," <<
-  // vc_RelativeShortwaveRadiation << "," << vc_NetShortwaveRadiation << "," << vw_NetRadiation <<
-  // std::endl;
-
   // Calculation of reference evapotranspiration
   // Penman-Monteith-Method FAO
   vc_ReferenceEvapotranspiration =
@@ -5694,27 +5604,6 @@ double CropModule::fc_ReferenceEvapotranspiration_notApplied(
         vc_SaturationDeficit)) /
       (vc_SaturatedVapourPressureSlope +
        vc_PsycrometerConstant * (1.0 + (vc_SurfaceResistance / vc_AerodynamicResistance)));
-
-  /*
-  double radiationTerm = 0.408 * vc_SaturatedVapourPressureSlope * vw_NetRadiation;
-  double aerodynamicTerm = vc_PsycrometerConstant * (900.0 / (vw_MeanAirTemperature + 273.0)) *
-  vc_WindSpeed_2m * vc_SaturationDeficit; double denominator = vc_SaturatedVapourPressureSlope +
-  vc_PsycrometerConstant * (1.0 + (vc_SurfaceResistance / vc_AerodynamicResistance)); double rawET =
-  (radiationTerm + aerodynamicTerm) / denominator; std::cerr << "daily refET debug: "
-      << vw_MeanAirTemperature << ","
-      << vc_SaturatedVapourPressure << ","
-      << vc_VapourPressure << ","
-      << vc_SaturationDeficit << ","
-      << vc_SaturatedVapourPressureSlope << ","
-      << vc_WindSpeed_2m << ","
-      << vc_SurfaceResistance << ","
-      << vc_AerodynamicResistance << ","
-      << radiationTerm << ","
-      << aerodynamicTerm << ","
-      << denominator << ","
-      << rawET
-      << '\n';
-  */
 
   if (vc_ReferenceEvapotranspiration < 0.0) {
     vc_ReferenceEvapotranspiration = 0.0;
@@ -5886,10 +5775,7 @@ void CropModule::fc_CropWaterUptake(size_t vc_GroundwaterTable, double vw_GrossP
     // shock recovery efficiency factor.
     if (vc_TransplantEfficiency < 1.0) {
       vc_TotalRootEffectivity *=
-          vc_TransplantEfficiency; // FS: potential bug: Is it intended that this increases
-                                   // vc_Transpiration[i_Layer], since dividing by a smaller
-                                   // vc_TotalRootEffectivity results in bigger
-                                   // vc_Transpiration[i_Layer]?
+          vc_TransplantEfficiency;
       vc_RemainingTotalRootEffectivity = vc_TotalRootEffectivity;
     }
 
@@ -6224,10 +6110,7 @@ void CropModule::fc_CropWaterUptake_h(
     // efficiency factor.
     if (vc_TransplantEfficiency < 1.0) {
       vc_TotalRootEffectivity_h *=
-          vc_TransplantEfficiency; // FS: potential bug: Is it intended that this increases
-                                   // vc_Transpiration_h[i_Layer], since dividing by a smaller
-                                   // vc_TotalRootEffectivity_h results in bigger
-                                   // vc_Transpiration_h[i_Layer]?
+          vc_TransplantEfficiency;
       vc_RemainingTotalRootEffectivity_h = vc_TotalRootEffectivity_h;
     }
 
@@ -6512,10 +6395,7 @@ std::pair<std::vector<double>, double> CropModule::fc_CropWaterUptake_notApplied
     // efficiency factor.
     if (vc_TransplantEfficiency < 1.0) {
       vc_TotalRootEffectivity *=
-          vc_TransplantEfficiency; // FS: potential bug: Is it intended that this increases
-                                   // vc_Transpiration[i_Layer], since dividing by a smaller
-                                   // vc_TotalRootEffectivity results in bigger
-                                   // vc_Transpiration[i_Layer]?
+          vc_TransplantEfficiency;
       vc_RemainingTotalRootEffectivity = vc_TotalRootEffectivity;
     }
 
