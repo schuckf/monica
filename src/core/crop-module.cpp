@@ -5168,14 +5168,12 @@ double CropModule::fc_ReferenceEvapotranspiration(double vw_MaxAirTemperature,
   //                                          ? vc_GlobalRadiation / vc_ClearSkyShortwaveRadiation
   //                                          : 0;
 
-  // capped at 1.0 like the soil moisture module and as FAO-56 says
+  // keep between 0.33 (total cloud cover) and 1.0,
+  // see https://www.fao.org/4/x0490e/x0490e07.htm#radiation (FAO-56)
   double vc_RelativeShortwaveRadiation =
       vc_ClearSkyShortwaveRadiation > 0
-          ? std::min(vc_GlobalRadiation / vc_ClearSkyShortwaveRadiation, 1.0)
+          ? bound(0.33, vc_GlobalRadiation / vc_ClearSkyShortwaveRadiation, 1.0)
           : 1.0;
-
-  // FAO-56 suggests 0.33 is total cloud cover
-  vc_RelativeShortwaveRadiation = bound(0.33, vc_RelativeShortwaveRadiation, 1.0);
 
   double vc_NetShortwaveRadiation = (1.0 - pc_ReferenceAlbedo) * vc_GlobalRadiation;
 
@@ -5413,7 +5411,8 @@ double CropModule::fc_ReferenceEvapotranspiration_h(
                    // 0.7 to 0.8 in arid and semiarid climates
   }
 
-  // FAO-56 suggests 0.33 is total cloud cover
+  // keep between 0.33 (total cloud cover) and 1.0,
+  // see https://www.fao.org/4/x0490e/x0490e07.htm#radiation (FAO-56)
   vc_RelativeShortwaveRadiation_h = bound(0.33, vc_RelativeShortwaveRadiation_h, 1.0);
 
   double vc_NetShortwaveRadiation_h = (1.0 - pc_ReferenceAlbedo) * vc_GlobalRadiation_h;
@@ -5580,11 +5579,12 @@ double CropModule::fc_ReferenceEvapotranspiration_notApplied(
   double vc_ClearSkyShortwaveRadiation =
       (0.75 + 0.00002 * vs_HeightNN) * vc_ExtraterrestrialRadiation;
 
+  // keep between 0.33 (total cloud cover) and 1.0, see
+  // https://www.fao.org/4/x0490e/x0490e07.htm#radiation (FAO-56)
   double vc_RelativeShortwaveRadiation =
-      vc_ClearSkyShortwaveRadiation > 0 ? vc_GlobalRadiation / vc_ClearSkyShortwaveRadiation : 0;
-
-  // FAO-56 suggests 0.33 is total cloud cover
-  vc_RelativeShortwaveRadiation = bound(0.333, vc_RelativeShortwaveRadiation, 1.0);
+      vc_ClearSkyShortwaveRadiation > 0
+          ? bound(0.33, vc_GlobalRadiation / vc_ClearSkyShortwaveRadiation, 1.0)
+          : 1.0;
 
   double vc_NetShortwaveRadiation = (1.0 - pc_ReferenceAlbedo) * vc_GlobalRadiation;
 
