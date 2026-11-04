@@ -1141,6 +1141,16 @@ void CropModule::step(double vw_MeanAirTemperature, double vw_MaxAirTemperature,
         assert(std::isfinite(vc_GrossCO2Assimilation_h));
         // hourly_GP_day.push_back(vc_GrossCO2Assimilation_h);
 
+        // [TRANSPLANT SHOCK] Photosynthesis Limitation.
+        // Reduces the daily gross CO2 assimilation rate according to the shock recovery efficiency
+        // factor.
+        // FS: vc_TransplantEfficiency is a daily factor, updated at the start of CropModule::step(...)
+        if (vc_TransplantEfficiency < 1.0) {
+          vc_GrossCO2Assimilation_h *= vc_TransplantEfficiency;  // FS: This is applied here to
+          // be consistent to the daily implementation. Other stress factors are usually applied to
+          // vc_Assimilates instead of vc_GrossPhotosynthesis.
+        }
+
         // Calculation of photosynthesis rate from [kg CO2 ha-1 h-1] to [kg CH2O ha-1 h-1]
         double vc_GrossPhotosynthesis_h = vc_GrossCO2Assimilation_h * 30.0 / 44.0;
 
@@ -1158,19 +1168,21 @@ void CropModule::step(double vw_MeanAirTemperature, double vw_MaxAirTemperature,
         // gross photosynthesis * vc_TransplantEfficiency * pc_FieldConditionModifier *
         // vc_CropFrostRedux * (vc_OxygenDeficit or vc_TranspirationDeficit)
 
-        // [TRANSPLANT SHOCK] Photosynthesis Limitation.
+        /* [TRANSPLANT SHOCK] Photosynthesis Limitation.
         // Reduces the daily gross CO2 assimilation rate according to the shock recovery efficiency
         // factor.
+        // FS: vc_TransplantEfficiency is a daily factor, updated at the start of CropModule::step(...)
         if (vc_TransplantEfficiency < 1.0) {
-          // vc_GrossCO2Assimilation_h *= vc_TransplantEfficiency;  // FS: this used to be applied
-          // to gross assimilation before the conversion from [kg CO2 ha-1 d-1] to [kg CH2O ha-1
-          // d-1]
-          //     applying it to assimilates instead (where the other stress factors are applied as
-          //     well) seems more consistent
+          // FS: this is applied to gross assimilation before the conversion from [kg CO2 ha-1 d-1]
+          // to [kg CH2O ha-1 d-1]
+          // applying it to assimilates instead (where the other stress factors are applied as
+          // well) seems more consistent (unless the effect is supposed to show up in 
+          // CropModule::vc_GrossPhotosynthesis or CropModule::vc_GrossPhotosynthesis_mol and
+          // CropModule::get_GrossPhotosynthesisHaRate or CropModule::get_GrossPhotosynthesisRate)
           vc_Assimilates_h *=
-              vc_TransplantEfficiency; // FS: vc_TransplantEfficiency is a daily factor, updated at
-                                       // the start of CropModule::step(...)
+              vc_TransplantEfficiency;
         }
+        */
 
         // reduction value for assimilate amount to simulate field conditions;
         vc_Assimilates_h *=
@@ -3418,6 +3430,13 @@ void CropModule::fc_CropPhotosynthesis(double vw_MeanAirTemperature, double vw_M
       debug() << "assimilation calculations for taller crop: grossCO2Assim: "
               << vc_GrossCO2Assimilation << " ref: " << vc_GrossCO2AssimilationReference << endl;
     }
+  }
+
+  // [TRANSPLANT SHOCK] Photosynthesis Limitation.
+  // Reduces the daily gross CO2 assimilation rate according to the shock
+  // recovery efficiency factor.
+  if (vc_TransplantEfficiency < 1.0) {
+    vc_GrossCO2Assimilation *= vc_TransplantEfficiency;
   }
 
   // daily GrossCO2Assimilation, multiplication with stress factors FieldCOnditionModifier,
