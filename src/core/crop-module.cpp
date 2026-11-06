@@ -24,6 +24,7 @@ Copyright (C) Leibniz Centre for Agricultural Landscape Research (ZALF)
 #include <cmath>
 #include "cr_math.h"
 #include <string>
+#include <sstream>
 
 #include <kj/exception.h>
 
@@ -1120,6 +1121,7 @@ void CropModule::step(double vw_MeanAirTemperature, double vw_MaxAirTemperature,
       vc_Assimilates = 0.0;
       vc_GrossAssimilates = 0.0;
       vc_MaintenanceRespirationAS = 0.0;
+      vc_GrowthRespirationAS = 0.0;
       vector<double> hourly_KTkc_day;
       // vector<double> hourly_GP_day;
       vector<double> hourly_ActualTranspiration_d;
@@ -1130,7 +1132,7 @@ void CropModule::step(double vw_MeanAirTemperature, double vw_MaxAirTemperature,
       // sub-daily overclocked loop
       for (int i = 0; i < vc_OcTS_num; ++i) {
         double t = vc_OverclockingTimeStep * double(i);
-        bool is_daytime = ((t >= sp.sunriseH) && (t < sp.sunsetH)) ? true : false;
+        bool is_daytime = (sp.hourlySolarEl.at(i) > 0) ? true : false; // bool is_daytime = ((t >= sp.sunriseH) && (t < sp.sunsetH)) ? true : false;
         auto [vc_GrossCO2Assimilation_h, vc_GrossCO2AssimilationReference_h, KTkc, LAI_sl_h,
               vc_GrossCO2Assimilation_h_sl, leafT] =
             subdaily_photosynthesis(i, sp, vw_AtmosphericCO2Concentration, parfrac, cscor, parcor);
@@ -1217,6 +1219,7 @@ void CropModule::step(double vw_MeanAirTemperature, double vw_MaxAirTemperature,
         // understanding or more quantitative data on this required). } else ...
 
         double vc_MaintenanceRespirationAS_h = 0.0;
+        double vc_GrowthRespirationAS_h = 0.0;
         if (cropPs.__enable_hourly_respiration__) {
           // ####################################################################################
           // hourly maintenance respiration (simplified; inspired by AGROSIM / daily MONICA code)
@@ -1243,8 +1246,53 @@ void CropModule::step(double vw_MeanAirTemperature, double vw_MaxAirTemperature,
                          cropPs.pc_MaintenanceRespirationParameter2))) /
               12.0; // @todo: [g m-2] --> [kg ha-1]
 
-          vc_MaintenanceRespirationAS_h = vc_MaintenanceRespiration_h; // [kg CH2O ha-1]
-          vc_Assimilates_h -= vc_MaintenanceRespiration_h;             // [kg CH2O ha-1]
+          vc_MaintenanceRespirationAS_h = vc_MaintenanceRespiration_h; // [kg CH2O ha-1 h-1]
+          vc_Assimilates_h -= vc_MaintenanceRespiration_h;             // [kg CH2O ha-1 h-1]
+
+          // ####################################################################################
+          // hourly growth respiration (simplified; inspired by AGROSIM / daily MONICA code)
+          // ####################################################################################
+
+          /* // FS: this sould remain daily for now, since it might be more realistic that plants
+          // //     have access to a pool of assimilates
+          // double vc_GrowthRespirationSum_h =
+          //     0.0; // this is a sum over plant organs (not over time!)
+
+          // if (vc_Assimilates_h > 0) {
+          //   for (int i_Organ = 0; i_Organ < pc_NumberOfOrgans; i_Organ++) {
+          //     vc_GrowthRespirationSum_h +=
+          //         pc_AssimilatePartitioningCoeff[vc_DevelopmentalStage][i_Organ] * vc_Assimilates_h *
+          //         pc_OrganGrowthRespiration[i_Organ];
+          //   }
+          // }
+
+          // if (vc_Assimilates_h > 0.0) {
+          // double vc_GrowthRespiration_h =
+          //       vc_GrowthRespirationSum_h *
+          //       cr::pow(2.0, (cropPs.pc_GrowthRespirationParameter1 *
+          //                 (leafT - // FS: for now, this is air temperature (which is consistent with
+          //                         // the current photosynthesis implementation)
+          //                         //     maybe use canopy temperature or use organ-specific
+          //                         //     temperature in the future and put this whole calculation
+          //                         //     inside the for (int i_Organ = 0; i_Organ <
+          //                         //     pc_NumberOfOrgans; i_Organ++) loop as well?
+          //                         // FS: note that this differs from the current daily implementation,
+          //                         //     which uses vc_PhotoTemperature for day AND NIGHTTIME growth 
+          //                         //     respiration (which might be a bug in the daily version?)
+          //                 cropPs.pc_GrowthRespirationParameter2))) /
+          //       12.0; // @todo: [g m-2] --> [kg ha-1]
+
+          //   if (vc_Assimilates_h > vc_GrowthRespiration_h) {
+          //     vc_Assimilates_h -= vc_GrowthRespiration_h;             // [kg CH2O ha-1 h-1]
+          //   } else {
+          //     vc_GrowthRespiration_h =
+          //         vc_Assimilates_h; // in this case the plant will be restricted in growth!
+          //     vc_Assimilates_h = 0.0;
+          //   }
+          //   vc_GrowthRespirationAS_h = vc_GrowthRespiration_h; // [kg CH2O ha-1 h-1]
+          // }
+          */
+
         }
 
 #pragma region further hourly calculations
@@ -1325,7 +1373,8 @@ void CropModule::step(double vw_MeanAirTemperature, double vw_MaxAirTemperature,
             vc_GrossCO2AssimilationReference * 22414.0 / (10.0 * 3600.0 * 24.0 * 44.0);
 
         if (cropPs.__enable_hourly_respiration__) {
-          vc_MaintenanceRespirationAS += vc_MaintenanceRespirationAS_h;
+          vc_MaintenanceRespirationAS += vc_MaintenanceRespirationAS_h * vc_OverclockingTimeStep;
+          // vc_GrowthRespirationAS += vc_GrowthRespirationAS_h * vc_OverclockingTimeStep;
         }
 
         if (cropPs.__enable_leaf_temperature__) {
@@ -1415,64 +1464,70 @@ void CropModule::step(double vw_MeanAirTemperature, double vw_MaxAirTemperature,
             vc_PhotoMaintenanceRespiration + vc_DarkMaintenanceRespiration; // [kg CH2O ha-1]
       }
 
-#pragma region growth respiration
-      // ####################################################################################
-      // daily growth respiration (AGROSIM / daily MONICA code)
-      // ####################################################################################
-      double vc_PhotoTemperature =
-          vw_MaxAirTemperature - ((vw_MaxAirTemperature - vw_MinAirTemperature) / 4.0);
-      double vc_NightTemperature =
-          vw_MinAirTemperature + ((vw_MaxAirTemperature - vw_MinAirTemperature) / 4.0);
-      double vc_NormalisedDayLength = 2.0 - (vc_PhotoperiodicDaylength / 12.0);
+      // if (!cropPs.__enable_hourly_respiration__) {
+      if (true) { // FS: for now, always run this since  hourly growth respiration is  commented out
+                  //  because it might not be realistig (since it ignores dark growth respiration)
+        // ####################################################################################
+        // daily growth respiration (AGROSIM / daily MONICA code)
+        // ####################################################################################
+        double vc_PhotoTemperature =
+            vw_MaxAirTemperature - ((vw_MaxAirTemperature - vw_MinAirTemperature) / 4.0);
+        double vc_NightTemperature =
+            vw_MinAirTemperature + ((vw_MaxAirTemperature - vw_MinAirTemperature) / 4.0);
+        double vc_NormalisedDayLength = 2.0 - (vc_PhotoperiodicDaylength / 12.0);
 
-      double vc_GrowthRespirationSum = 0.0;
+        double vc_GrowthRespirationSum = 0.0;
 
-      if (vc_Assimilates > 0) {
-        for (int i_Organ = 0; i_Organ < pc_NumberOfOrgans; i_Organ++) {
-          vc_GrowthRespirationSum +=
-              pc_AssimilatePartitioningCoeff[vc_DevelopmentalStage][i_Organ] * vc_Assimilates *
-              pc_OrganGrowthRespiration[i_Organ];
+        if (vc_Assimilates > 0) {
+          for (int i_Organ = 0; i_Organ < pc_NumberOfOrgans; i_Organ++) {
+            vc_GrowthRespirationSum +=
+                pc_AssimilatePartitioningCoeff[vc_DevelopmentalStage][i_Organ] * vc_Assimilates *
+                pc_OrganGrowthRespiration[i_Organ];
+          }
         }
-      }
 
-      double vc_PhotoGrowthRespiration = 0.0;
-      if (vc_Assimilates > 0.0) {
-        vc_PhotoGrowthRespiration =
-            vc_GrowthRespirationSum *
-            cr::pow(2.0, (cropPs.pc_GrowthRespirationParameter1 *
-                      (vc_PhotoTemperature - cropPs.pc_GrowthRespirationParameter2))) *
-            (2.0 - vc_NormalisedDayLength); // [kg CH2O ha-1]
-
-        if (vc_Assimilates > vc_PhotoGrowthRespiration) {
-          vc_Assimilates -= vc_PhotoGrowthRespiration;
-        } else {
+        double vc_PhotoGrowthRespiration = 0.0;
+        if (vc_Assimilates > 0.0) {
           vc_PhotoGrowthRespiration =
-              vc_Assimilates; // in this case the plant will be restricted in growth!
-          vc_Assimilates = 0.0;
+              vc_GrowthRespirationSum *
+              cr::pow(2.0, (cropPs.pc_GrowthRespirationParameter1 *
+                        (vc_PhotoTemperature - cropPs.pc_GrowthRespirationParameter2))) *
+              (2.0 - vc_NormalisedDayLength); // [kg CH2O ha-1]
+
+          if (vc_Assimilates > vc_PhotoGrowthRespiration) {
+            vc_Assimilates -= vc_PhotoGrowthRespiration;
+          } else {
+            vc_PhotoGrowthRespiration =
+                vc_Assimilates; // in this case the plant will be restricted in growth!
+            vc_Assimilates = 0.0;
+          }
         }
-      }
 
-      double vc_DarkGrowthRespiration = 0.0;
-      if (vc_Assimilates > 0.0) {
-        vc_DarkGrowthRespiration =
-            vc_GrowthRespirationSum *
-            cr::pow(2.0, (cropPs.pc_GrowthRespirationParameter1 *
-                      (vc_PhotoTemperature - // FS: Why is vc_PhotoTemperature (= daytime
-                                             // temperature) used here? Is this intended?
-                       cropPs.pc_GrowthRespirationParameter2))) *
-            vc_NormalisedDayLength; // [kg CH2O ha-1]
-
-        if (vc_Assimilates > vc_DarkGrowthRespiration) {
-          vc_Assimilates -= vc_DarkGrowthRespiration;
-        } else {
+        double vc_DarkGrowthRespiration = 0.0;
+        if (vc_Assimilates > 0.0) {
           vc_DarkGrowthRespiration =
-              vc_Assimilates; // in this case the plant will be restricted in growth!
-          vc_Assimilates = 0.0;
+              vc_GrowthRespirationSum *
+              cr::pow(2.0, (cropPs.pc_GrowthRespirationParameter1 *
+                        (vc_PhotoTemperature - // FS: Why is vc_PhotoTemperature (= daytime
+                                              // temperature) used here? Is this intended?
+                        cropPs.pc_GrowthRespirationParameter2))) *
+              vc_NormalisedDayLength; // [kg CH2O ha-1]
+
+          if (vc_Assimilates > vc_DarkGrowthRespiration) {
+            vc_Assimilates -= vc_DarkGrowthRespiration;
+          } else {
+            vc_DarkGrowthRespiration =
+                vc_Assimilates; // in this case the plant will be restricted in growth!
+            vc_Assimilates = 0.0;
+          }
         }
+        vc_GrowthRespirationAS =
+            vc_PhotoGrowthRespiration + vc_DarkGrowthRespiration; // [kg CH2O ha-1]
       }
-      vc_GrowthRespirationAS =
-          vc_PhotoGrowthRespiration + vc_DarkGrowthRespiration; // [kg CH2O ha-1]
       vc_TotalRespired = vc_GrossAssimilates - vc_Assimilates;  // [kg CH2O ha-1]
+
+      assert(abs(vc_TotalRespired - (vc_MaintenanceRespirationAS + vc_GrowthRespirationAS)) < 
+             (1e-9 * max(vc_TotalRespired, (vc_MaintenanceRespirationAS + vc_GrowthRespirationAS))));
 
       // to reactivate HERMES algorithms, needs to be vc_NetPhotosynthesis
       // used instead of  vc_Assimilates in the subsequent methods
@@ -1505,10 +1560,8 @@ void CropModule::step(double vw_MeanAirTemperature, double vw_MaxAirTemperature,
         // (vw_MeanAirTemperature > pc_MaximumTemperatureForAssimilation)) {
         vc_GrossPhotosynthesis = vc_NetMaintenanceRespiration;
       }
-#pragma endregion growth respiration
 
       // @ToDo FS: These factors might not be needed hourly?
-
       // hourly heat stress impact and hourly frost kill
       // FS: In the Agri-PV context, it would make sense to somehow take the dampened temperature
       // dynamic into account.
@@ -3370,7 +3423,6 @@ void CropModule::fc_CropPhotosynthesis(double vw_MeanAirTemperature, double vw_M
       // sub-daily overclocked loop
       for (int i = 0; i < vc_OcTS_num; ++i) {
         double t = vc_OverclockingTimeStep * double(i);
-        bool is_daytime = ((t >= sp.sunriseH) && (t < sp.sunsetH)) ? true : false;
         auto [vc_GrossCO2Assimilation_h, vc_GrossCO2AssimilationReference_h, KTkc, LAI_sl_h,
               vc_GrossCO2Assimilation_h_sl, leafT] =
             subdaily_photosynthesis(i, sp, vw_AtmosphericCO2Concentration, parfrac, cscor, parcor);
@@ -3686,24 +3738,34 @@ CropModule::subdaily_data CropModule::subdaily_meteodata(const Tools::Date &curr
   // FS: time step of sunrise and sunset defined in a way that sunrise is included in daytime
   // (sun_el > 0) and sunset is excluded from daytime (including both time steps might otherwise
   // lead to overestimation of irradiance)
-  double sunriseH = 0.0, sunsetH = 0.0;
+  double sunriseH = -1.0, sunsetH = -1.0;
 
   // sub-daily disaggregation or input read in
   for (int i = 0; i < vc_OcTS_num;
        ++i) { // iterate i from 0 to vc_OcTS_num, excluding the last number
-    double t = vc_OverclockingTimeStep * double(i);
-    double sun_el, hgr;
+    double t = vc_OverclockingTimeStep * static_cast<double>(i);
+    double sun_el, hgr, her;
 
     if (!cropPs.__hourly_in_data__
              .empty()) { // hourly air temperature and diffuse and direct irradiance input from file
       // generate isodate string                                                            //
+      // auto sep = t < 10 ? "T0" : "T";
+      // auto isodateformat_end = ":00:00";
+      // auto current_isodatetime = current_isodate + sep + to_string(t) +
+      //                            isodateformat_end;
       // variable time step version:
-      auto sep = t < 10 ? "T0" : "T";    // #include <format>
-      auto isodateformat_end = ":00:00"; // int hour = static_cast<int>(t);
-      auto current_isodatetime = current_isodate + sep + to_string(t) +
-                                 isodateformat_end; // auto current_isodatetime = current_isodate +
-                                                    // "T" + std::format("{:02d}:{:02d}:00", hour,
-                                                    // static_cast<int>((t - hour) * 60 + 1e-12));
+      int totalMinutes = static_cast<int>(std::lround(t * 60.0));
+      int hour = totalMinutes / 60;
+      int minute = totalMinutes % 60;
+      std::ostringstream timestamp;
+      timestamp << current_isodate
+                << 'T'
+                << std::setfill('0')
+                << std::setw(2) << hour
+                << ':'
+                << std::setw(2) << minute
+                << ":00";
+      const std::string current_isodatetime = timestamp.str();
 
       // read hourly data from json object dictionary __hourly_in_data__
       auto hourly_data_in = cropPs.__hourly_in_data__.at(current_isodatetime).array_items();
@@ -3756,41 +3818,64 @@ CropModule::subdaily_data CropModule::subdaily_meteodata(const Tools::Date &curr
                                0.5)); // theoretical time zone central meridian local time fallback
                                       // (in case cropPs.__UTC_offset__ contains unexpected values)
       assert((UTC_offset > -13) && (UTC_offset < 15));
-      double time =
-          t; // +/- 0.5;  // FS: this actually depends on the timestamp labeling definition used for
-             // the read in hourly data:
-             //     +0.0 for instantaneous or centered interval
-             //     -0.5 for previous-hour accumulation [t-1h, t]; however, this would also require
-             //     using vs_JulianDay - 1 +0.5 for next-hour accumulation [t, t+1h]
-      solar_position_result sunpos =
-          solar_position(vs_Latitude, vs_Longitude, vs_JulianDay, time, UTC_offset, true);
+
+      // depending on labeling definition used for the read in hourly data:
+      //     +0.0                           for instantaneous or centered interval
+      //     -0.5 * vc_OverclockingTimeStep for previous-hour accumulation [t-1h, t], starting at the 
+      //                                    previous day when t==0.0
+      //     +0.5 * vc_OverclockingTimeStep for next-hour accumulation [t, t+1h]
+      double time_e = t - 0.5 * vc_OverclockingTimeStep;  // assuming ERA5 timestep convention for radiation
+      // FS: Tools::solar_position(...) should even work when doy reaches 0 caused by vs_JulianDay-1 ?
+      solar_position_result sunpos = solar_position(vs_Latitude,
+                                                    vs_Longitude,
+                                                    (time_e < 0) ? (vs_JulianDay-1) : vs_JulianDay,
+                                                    (time_e < 0) ? (24.0 + time_e) : time_e,
+                                                    UTC_offset,
+                                                    true);
       sun_el = (sunpos.el_rad > hPhoto::eps) ? sunpos.el_rad : 0.;
+      her = hourlyRad_from_sun_el(vc_ExtraterrestrialRadiation,
+                                  vs_Latitude,
+                                  (time_e < 0) ? (vs_JulianDay-1) : vs_JulianDay,
+                                  sun_el,
+                                  vc_OverclockingTimeStep);
     } else {
-      sun_el = solarElevation(t, vs_Latitude, vs_JulianDay);
-      sun_el = (sun_el > hPhoto::eps) ? sun_el : 0.;
+      // use t as time here since these are temporally disaggregated variables at discrete sampling times (instantaneous)
+      auto solar_el = solarElevation(t, vs_Latitude, vs_JulianDay);
+      sun_el = (solar_el > hPhoto::eps) ? solar_el : 0.;
       hgr = hourlyRad(vc_GlobalRadiation, vs_Latitude, vs_JulianDay, t,
                       vc_OverclockingTimeStep); // FS: adjust hourlyRad function in the future;
                                                 // harmonize with solarElevation function?
+      her = hourlyRad(vc_ExtraterrestrialRadiation, vs_Latitude, vs_JulianDay, t, vc_OverclockingTimeStep);
       if (hgr > 0)
-        assert(sun_el > 0);
+        assert(solar_el > 0);
       sd._nvars_read_from_json.push_back(0);
     }
     sd.hourlyGlobrad.push_back(hgr);
-    sd.hourlyExtrarad.push_back(hourlyRad(vc_ExtraterrestrialRadiation, vs_Latitude, vs_JulianDay,
-                                          t, vc_OverclockingTimeStep));
+    sd.hourlyExtrarad.push_back(her);
 
-    sunriseH = ((sun_el > 0) && (sunriseH == 0)) ? t : sunriseH;
+    sunriseH = ((sun_el > 0) && (sunriseH < 0)) ? t : sunriseH;
     sunsetH = ((!sd.hourlySolarEl.empty()) && (sun_el <= hPhoto::eps) &&
                (sd.hourlySolarEl.back() > hPhoto::eps))
                   ? t
                   : sunsetH;
     sd.hourlySolarEl.push_back(sun_el);
   }
+
   assert(sd.hourlyGlobrad.size() == vc_OcTS_num);
   assert(sd.hourlyExtrarad.size() == vc_OcTS_num);
   assert(sd.hourlySolarEl.size() == vc_OcTS_num);
 
   if (cropPs.__hourly_in_data__.empty()) {
+    // polar night
+    if (abs(vs_Latitude) > 60.0) {
+      if (sunriseH < 0.0) {
+        sunriseH = 0.0;
+      }
+      if (sunsetH < 0.0) {
+        sunsetH = 24.0;
+      }
+    }
+
     for (int i = 0; i < vc_OcTS_num; ++i) {
       double t = vc_OverclockingTimeStep * double(i);
       sd.hourlyAirT.push_back(hourlyT(vw_MinAirTemperature, vw_MaxAirTemperature, t, sunriseH));
@@ -3809,7 +3894,7 @@ CropModule::subdaily_data CropModule::subdaily_meteodata(const Tools::Date &curr
 
   // /* read in or disaggregated air temperature consistency safeguard
   auto [Tmin_it, Tmax_it] = minmax_element(sd.hourlyAirT.begin(), sd.hourlyAirT.end());
-  double margin = 0.01;
+  double margin = 0.1;
   if (abs(*Tmin_it - vw_MinAirTemperature) > margin) {
     if (cropPs.__hourly_in_data__.empty()) {
       *Tmin_it = vw_MinAirTemperature; // enforce minimum air temperature consistency after
@@ -5297,11 +5382,11 @@ double CropModule::fc_ReferenceEvapotranspiration(double vw_MaxAirTemperature,
  * Evapotranspiration Equation) in comparison.
  *
  * @param vs_HeightNN Height above sea level
- * @param vw_DewAirTemperature Air dewpoint temperature for the hour (used for vapour pressure
+ * @param vw_DewAirTemperature Air dewpoint temperature for the timestep (used for vapour pressure
  * calculation if relative humidity is not available (vw_RelativeHumidity <= 0.0))
  * @param vw_RelativeHumidity_h Relative humidity [0...1]
- * @param vw_MeanAirTemperature_h Mean air temperature of the hour
- * @param vw_WindSpeed_h Speed of wind for the hour [m s-1]
+ * @param vw_MeanAirTemperature_h Mean air temperature of the timestep
+ * @param vw_WindSpeed_h Speed of wind for the timestep [m s-1]
  * @param vw_WindSpeedHeight Height in which the wind speed has been measured
  * @param vw_AtmosphericCO2Concentration CO2 concentration in the athmosphere (needed for
  * photosynthesis)
@@ -5309,7 +5394,7 @@ double CropModule::fc_ReferenceEvapotranspiration(double vw_MaxAirTemperature,
  * (hourlyExtrarad.at(i))
  * @param vc_ExtraterrestrialRadiation_3h_b4_sunseth Extraterrestrial radiation for time period
  * roughly 2-3 hours before sunset (hourlyExtrarad.at(sunsetH-3)
- * @param vc_GlobalRadiation_h Global radiation for the hour (hourlyGlobrad.at(i))
+ * @param vc_GlobalRadiation_h Global radiation for the timestep (hourlyGlobrad.at(i))
  * @param vc_GlobalRadiation_3h_b4_sunseth Global radiation for time period roughly 2-3 hours before
  * sunset (hourlyGlobrad.at(sunsetH-3)
  * @param vc_GrossPhotosynthesisReference_mol_h under well watered conditions [mol m-2 s-1]
@@ -5317,7 +5402,7 @@ double CropModule::fc_ReferenceEvapotranspiration(double vw_MaxAirTemperature,
  * @param calc_soilHeatflux [true/false] Default is true.
  *                          (For daily calculations however, the soil heat flux is often neglected -
  * so for comparisons, it might be useful to be able to switch it off.)
- * @return Reference evapotranspiration for the hour
+ * @return Reference evapotranspiration for the timestep
  * 
  * @author FS
  * 
@@ -6050,7 +6135,7 @@ void CropModule::update_extracted_soilColumn_params_from_daily() {
 }
 
 /**
- * @brief  hourly water uptake by the crop
+ * @brief  water uptake by the crop of the timestep (e.g. hourly)
  *
  *  In this function the potential transpiration calcuated from potential
  *  evapotranspiration by soil cover fraction is reduced by water availability
