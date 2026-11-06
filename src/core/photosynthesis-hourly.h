@@ -79,15 +79,15 @@ double convert_unit_to_MJpm2ph(double value, hPhoto::unit in_unit);
  * 
  * Source: Spitters et al. 1986; original source seems to be de Jong 1980, p.79 (according to Spitters et al. 1986).
  * 
- * - Spitters CJT, Toussaint HAJM & Goudriaan J (1986). Separating the diffuse and direct component of global radiation and its implications for modeling canopy photosynthesis. Part I. Components of incoming radiation. Agricultural and Forest Meteorology, 38(1-3), 217-229.
- *   https://doi.org/10.1016/0168-1923(86)90060-2
- * 
- * - de Jong JBRM (1980). Een karakterisering van de zonnestraling in Nederland. Doctoraalverslag Vakgroep Fysische Aspecten van de Gebouwde Omgeving afd. Bouwkunde en Vakgroep Warmte- en Stromingstechnieken afd, Werktuigbouwkunde, Technische Hogeschool (Techn. Univ.), Eindhoven, Netherlands (1980), p. 97 + 67 [in Dutch].
+ * @cite Spitters CJT, Toussaint HAJM & Goudriaan J (1986). Separating the diffuse and direct component of global radiation and its implications for modeling canopy photosynthesis. Part I. Components of incoming radiation. Agricultural and Forest Meteorology, 38(1-3), 217-229. https://doi.org/10.1016/0168-1923(86)90060-2
+ * @cite de Jong JBRM (1980). Een karakterisering van de zonnestraling in Nederland. Doctoraalverslag Vakgroep Fysische Aspecten van de Gebouwde Omgeving afd. Bouwkunde en Vakgroep Warmte- en Stromingstechnieken afd, Werktuigbouwkunde, Technische Hogeschool (Techn. Univ.), Eindhoven, Netherlands (1980), p. 97 + 67 [in Dutch].
  * 
  * @param globrad        daily global irradiance [W m-2]
  * @param extra_terr_rad daily extra-terrestrial radiation [W m-2]
  * @param solar_elev     daily solar elevation angle [rad]
- * @return daily fraction of diffuse radiation 
+ * @return daily fraction of diffuse radiation
+ * 
+ * @see hPhoto::diffuse_fraction_hourly_f
  */
 double diffuse_fraction_daily_f(double globrad, double extra_terr_rad, double solar_elev);
 
@@ -98,20 +98,18 @@ double diffuse_fraction_daily_f(double globrad, double extra_terr_rad, double so
  * 
  * Source: Spitters et al. 1986; original source seems to be de Jong 1980, p.55 (according to Spitters et al. 1986).
  * A comparison using different models for the diffuse fraction of
- * the global insolation can be found in [2]_ in the context of Sweden.
+ * the global insolation can be found in Ma Lu et al. 2022 in the context of Sweden.
  * 
- * - Spitters CJT, Toussaint HAJM & Goudriaan J (1986). Separating the diffuse and direct component of global radiation and its implications for modeling canopy photosynthesis. Part I. Components of incoming radiation. Agricultural and Forest Meteorology, 38(1-3), 217-229.
- *   https://doi.org/10.1016/0168-1923(86)90060-2
- * 
- * - de Jong JBRM (1980). Een karakterisering van de zonnestraling in Nederland. Doctoraalverslag Vakgroep Fysische Aspecten van de Gebouwde Omgeving afd. Bouwkunde en Vakgroep Warmte- en Stromingstechnieken afd, Werktuigbouwkunde, Technische Hogeschool (Techn. Univ.), Eindhoven, Netherlands (1980), p. 97 + 67 [in Dutch].
- * 
- * - Ma Lu S, Zainali S, Stridh B, Avelin A, Amaducci S, Colauzzi M & Campana PE (2022). Photosynthetically active radiation decomposition models for agrivoltaic systems applications. Solar Energy, 244, 536-549.
- * https://doi.org/10.1016/j.solener.2022.05.046
+ * @cite Spitters CJT, Toussaint HAJM & Goudriaan J (1986). Separating the diffuse and direct component of global radiation and its implications for modeling canopy photosynthesis. Part I. Components of incoming radiation. Agricultural and Forest Meteorology, 38(1-3), 217-229. https://doi.org/10.1016/0168-1923(86)90060-2
+ * @cite de Jong JBRM (1980). Een karakterisering van de zonnestraling in Nederland. Doctoraalverslag Vakgroep Fysische Aspecten van de Gebouwde Omgeving afd. Bouwkunde en Vakgroep Warmte- en Stromingstechnieken afd, Werktuigbouwkunde, Technische Hogeschool (Techn. Univ.), Eindhoven, Netherlands (1980), p. 97 + 67 [in Dutch].
+ * @cite Ma Lu S, Zainali S, Stridh B, Avelin A, Amaducci S, Colauzzi M & Campana PE (2022). Photosynthetically active radiation decomposition models for agrivoltaic systems applications. Solar Energy, 244, 536-549. https://doi.org/10.1016/j.solener.2022.05.046
  * 
  * @param globrad        hourly global irradiance [W m-2]
  * @param extra_terr_rad hourly extra-terrestrial radiation [W m-2]
  * @param solar_elev     hourly solar elevation angle [rad]
- * @return hourly fraction of diffuse radiation 
+ * @return hourly fraction of diffuse radiation
+ * 
+ * @see hPhoto::diffuse_fraction_daily_f
  */
 double diffuse_fraction_hourly_f(double globrad, double extra_terr_rad, double solar_elev);
 
@@ -123,13 +121,16 @@ double diffuse_fraction_hourly_f(double globrad, double extra_terr_rad, double s
  * For some use-cases, it is advantageous to treat this circumsolar component (which is part of the diffuse irradiance) as
  * direct irradiance instead, leading to a reduced diffuse fraction.
  * 
- * See eq. 9 in:
- * - Spitters CJT, Toussaint HAJM & Goudriaan J (1986). Separating the diffuse and direct component of global radiation and its implications for modeling canopy photosynthesis. Part I. Components of incoming radiation. Agricultural and Forest Meteorology, 38(1-3), 217-229.
- *   https://doi.org/10.1016/0168-1923(86)90060-2
+ * See eq. 9 in Spitters et al. 1986.
+ * @cite Spitters CJT, Toussaint HAJM & Goudriaan J (1986). Separating the diffuse and direct component of global radiation and its implications for modeling canopy photosynthesis. Part I. Components of incoming radiation. Agricultural and Forest Meteorology, 38(1-3), 217-229. https://doi.org/10.1016/0168-1923(86)90060-2
  * 
  * @param diffuse_fraction (= diffuse irradiance / global radiation) [-]
  * @param solar            elevation angle [rad]
  * @return circumsolar correction factor
+ * 
+ * @see hPhoto::diffuse_fraction_hourly_f
+ * @see hPhoto::diffuse_fraction_daily_f
+ * @see hPhoto::diffuse_fraction_parcor
  */
 double diffuse_fraction_cscor(double diffuse_fraction, double solar_elevation);
 
@@ -142,12 +143,15 @@ double diffuse_fraction_cscor(double diffuse_fraction, double solar_elevation);
  * sky conditions, the effects of scattering processes in the atmosphere can affect diffuse fraction in these wavebands to a different extent
  * than total global wavelength spectrum ( leading to a increased diffuse fraction in the PAR region, especially for clear-sky conditions).
  * 
- * See eq. 10 in:
- * - Spitters CJT, Toussaint HAJM & Goudriaan J (1986). Separating the diffuse and direct component of global radiation and its implications for modeling canopy photosynthesis. Part I. Components of incoming radiation. Agricultural and Forest Meteorology, 38(1-3), 217-229.
- *   https://doi.org/10.1016/0168-1923(86)90060-2
+ * See eq. 10 in Spitters et al. 1986
+ * @cite Spitters CJT, Toussaint HAJM & Goudriaan J (1986). Separating the diffuse and direct component of global radiation and its implications for modeling canopy photosynthesis. Part I. Components of incoming radiation. Agricultural and Forest Meteorology, 38(1-3), 217-229. https://doi.org/10.1016/0168-1923(86)90060-2
  * 
  * @param diffuse fraction (= diffuse irradiance / global radiation) [-]
  * @return PAR wavelengths correction factor
+ * 
+ * @see hPhoto::diffuse_fraction_hourly_f
+ * @see hPhoto::diffuse_fraction_daily_f
+ * @see hPhoto::diffuse_fraction_cscor
  */
 double diffuse_fraction_parcor(double diffuse_fraction);
 
@@ -164,11 +168,8 @@ struct PAR_radiation_result {
  * 
  * see Spitters et al. 1986 for the original approach (including the optional corrections) and Ma Lu et al. for application in the Agrivoltaics context
  * 
- * - Spitters CJT,  Toussaint HAJM & Goudriaan J (1986). Separating the diffuse and direct component of global radiation and its implications for modeling canopy photosynthesis. Part I. Components of incoming radiation. Agricultural and Forest Meteorology, 38(1-3), 217-229.
- *   https://doi.org/10.1016/0168-1923(86)90060-2
- * 
- * - Ma Lu S, Zainali S, Stridh B, Avelin A, Amaducci S, Colauzzi M & Campana, PE (2022). Photosynthetically active radiation decomposition models for agrivoltaic systems applications. Solar Energy, 244, 536-549.
- *   https://doi.org/10.1016/j.solener.2022.05.046
+ * @cite Spitters CJT,  Toussaint HAJM & Goudriaan J (1986). Separating the diffuse and direct component of global radiation and its implications for modeling canopy photosynthesis. Part I. Components of incoming radiation. Agricultural and Forest Meteorology, 38(1-3), 217-229. https://doi.org/10.1016/0168-1923(86)90060-2
+ * @cite Ma Lu S, Zainali S, Stridh B, Avelin A, Amaducci S, Colauzzi M & Campana, PE (2022). Photosynthetically active radiation decomposition models for agrivoltaic systems applications. Solar Energy, 244, 536-549. https://doi.org/10.1016/j.solener.2022.05.046
  * 
  * @param global_rad     global radiation [MJ m-2 h-1]
  * @param extra_terr_rad extra-terrestrial radiation [MJ m-2 h-1]
@@ -178,6 +179,11 @@ struct PAR_radiation_result {
  * @param parfrac        photosynthetically active fraction of the light spectrum. 0.5 according to Spitters 1986; 0.48 according to BF5 Sunshine sensor manual? Default is 0.45.
  * @param out_unit       output unit (supported units: MJpm2ps, Jpm2ps, Wpm2ps, umolpm2ps). Default is hPhoto::unit::MJpm2ps.
  * @return hPhoto::PAR_radiation_result direct [out_unit PAR], diffuse [out_unit PAR]
+ * 
+ * @see hPhoto::diffuse_fraction_hourly_f
+ * @see hPhoto::diffuse_fraction_daily_f
+ * @see hPhoto::diffuse_fraction_cscor
+ * @see hPhoto::diffuse_fraction_parcor
  */
 PAR_radiation_result PAR_radiation(double global_rad, double extra_terr_rad, double solar_el, bool cscor=true, bool parcor=true, double parfrac=0.45, unit out_unit=unit::MJpm2ph);
 
@@ -192,11 +198,8 @@ struct dL_result {
  * 
  * Based on Spitters 1986 and Spitters et al. 1989 (SUCROS87) leaf and canopy photosynthesis. Can be used either with multiple canopy layers or with 3-point gaussian integration.
  * 
- * - Spitters CJT (1986). Separating the diffuse and direct component of global radiation and its implications for modeling canopy photosynthesis Part II. Calculation of canopy photosynthesis. Agricultural and Forest Meteorology, 38(1-3), 231-242.
- *   https://doi.org/10.1016/0168-1923(86)90061-4
- * 
- * - Spitters CJT, van Keulen H & van Kraalingen DWG (1989). A simple and universal crop growth simulator: SUCROS87. In: R Rabbinge, SA Ward & HH van Laar (eds), Simulation and systems management in crop protection. Simulation monographs, Pudoc, Wageningen, pp. 147-181.
- *   https://edepot.wur.nl/171923
+ * @cite Spitters CJT (1986). Separating the diffuse and direct component of global radiation and its implications for modeling canopy photosynthesis Part II. Calculation of canopy photosynthesis. Agricultural and Forest Meteorology, 38(1-3), 231-242. https://doi.org/10.1016/0168-1923(86)90061-4
+ * @cite Spitters CJT, van Keulen H & van Kraalingen DWG (1989). A simple and universal crop growth simulator: SUCROS87. In: R Rabbinge, SA Ward & HH van Laar (eds), Simulation and systems management in crop protection. Simulation monographs, Pudoc, Wageningen, pp. 147-181. https://edepot.wur.nl/171923
  * 
  * @param beta    solar elevation angle [rad].
  * @param L       partial cumulated leaf area index at various canopy depths (= LAIC from Spitters et al. 1989).
@@ -227,6 +230,9 @@ struct dL_result {
  *                  lrc_style::rectangular_hyperbola    = function type (c*x)/(c+x), see Spitters 1986 concise approaches;
  *                  lrc_style::nonrectangular_hyperbola = not implemented yet! For inspiration, see LICOR method and CO2 gas exchange papers.
  * @return hphoto::dL_result {f_sl, A_sl, A_sh} (fraction sunlit, sunlit & shaded hourly gross photosynthesis of the canopy layer dL [g CO2 m-2 ground h-1]).
+ * 
+ * @see hPhoto::Spitters_canop_photo_multilayer
+ * @see hPhoto::Spitters_canop_photo_3p
  */
 dL_result Spitters_canop_photo_dL(double beta, double L, double I0_dr, double I0_df, double A_m, double epsilon, double k_df=0.6, double sigma=0.2, bool kgpha=false, hPhoto::la_integ_style leaf_angle_integration_style=hPhoto::la_integ_style::spitters86_custom, hPhoto::lrc_style lrc=hPhoto::lrc_style::exponential);
 
@@ -243,11 +249,8 @@ struct photo_result{
  * 
  * Based on Spitters 1986 and Spitters et al. 1989 (SUCROS87) leaf and canopy photosynthesis, but with multiple canopy layers instead of 3-point gaussian integration.
  * 
- * - Spitters CJT (1986). Separating the diffuse and direct component of global radiation and its implications for modeling canopy photosynthesis Part II. Calculation of canopy photosynthesis. Agricultural and Forest Meteorology, 38(1-3), 231-242.
- *   https://doi.org/10.1016/0168-1923(86)90061-4
- * 
- * - Spitters CJT, van Keulen H & van Kraalingen DWG (1989). A simple and universal crop growth simulator: SUCROS87. In: R Rabbinge, SA Ward & HH van Laar (eds), Simulation and systems management in crop protection. Simulation monographs, Pudoc, Wageningen, pp. 147-181.
- *   https://edepot.wur.nl/171923
+ * @cite Spitters CJT (1986). Separating the diffuse and direct component of global radiation and its implications for modeling canopy photosynthesis Part II. Calculation of canopy photosynthesis. Agricultural and Forest Meteorology, 38(1-3), 231-242. https://doi.org/10.1016/0168-1923(86)90061-4
+ * @cite Spitters CJT, van Keulen H & van Kraalingen DWG (1989). A simple and universal crop growth simulator: SUCROS87. In: R Rabbinge, SA Ward & HH van Laar (eds), Simulation and systems management in crop protection. Simulation monographs, Pudoc, Wageningen, pp. 147-181. https://edepot.wur.nl/171923
  * 
  * @param beta    solar elevation angle [rad].
  * @param LAI     leaf area index [m2 m-2]
@@ -278,6 +281,9 @@ struct photo_result{
  * @param n_canopy_layers number of canopy layers. Used for midpoint-integrtion over the photosynthesis per layer (non-linear, exponential). Default is 10.
  *                  Usually in the order of 10 to 20 (accuracy/computation time trade-off).
  * @return {A_gross_canop, LAI_sl_canop, f_sl_canop, A_sl_gross_canop, A_sh_gross_canop} (hourly gross photosynthesis of the whole canopy [g CO2 m-2 ground h-1], sunlit LAI, fraction sunlit, sunlit & shaded hourly gross photosynthesis of the whole canopy [g CO2 m-2 ground h-1]).
+ * 
+ * @see hPhoto::Spitters_canop_photo_dL
+ * @see hPhoto::Spitters_canop_photo_3p
  */
 photo_result Spitters_canop_photo_multilayer(double beta, double LAI, double I0_dr, double I0_df, double A_m, double epsilon, double k_df=0.6, double sigma=0.2, bool kgpha=false, hPhoto::la_integ_style leaf_angle_integration_style=hPhoto::la_integ_style::spitters86_custom, hPhoto::lrc_style lrc=hPhoto::lrc_style::exponential, int n_canopy_layers=10);
 
@@ -287,11 +293,8 @@ photo_result Spitters_canop_photo_multilayer(double beta, double LAI, double I0_
  * 
  * Based on Spitters 1986 and Spitters et al. 1989 (SUCROS87) leaf and canopy photosynthesis, with 3-point gaussian integration over the canopy layers.
  * 
- * - Spitters CJT (1986). Separating the diffuse and direct component of global radiation and its implications for modeling canopy photosynthesis Part II. Calculation of canopy photosynthesis. Agricultural and Forest Meteorology, 38(1-3), 231-242.
- *   https://doi.org/10.1016/0168-1923(86)90061-4
- * 
- * - Spitters CJT, van Keulen H & van Kraalingen DWG (1989). A simple and universal crop growth simulator: SUCROS87. in R Rabbinge, SA Ward & HH van Laar (eds), Simulation and systems management in crop protection. Simulation monographs, Pudoc, Wageningen, pp. 147-181.
- *   https://edepot.wur.nl/171923
+ * @cite Spitters CJT (1986). Separating the diffuse and direct component of global radiation and its implications for modeling canopy photosynthesis Part II. Calculation of canopy photosynthesis. Agricultural and Forest Meteorology, 38(1-3), 231-242. https://doi.org/10.1016/0168-1923(86)90061-4
+ * @cite Spitters CJT, van Keulen H & van Kraalingen DWG (1989). A simple and universal crop growth simulator: SUCROS87. in R Rabbinge, SA Ward & HH van Laar (eds), Simulation and systems management in crop protection. Simulation monographs, Pudoc, Wageningen, pp. 147-181. https://edepot.wur.nl/171923
  * 
  * @param beta    solar elevation angle [rad].
  * @param LAI     leaf area index [m2 m-2]
@@ -320,6 +323,9 @@ photo_result Spitters_canop_photo_multilayer(double beta, double LAI, double I0_
  *                  lrc_style::rectangular_hyperbola    = function type (c*x)/(c+x), see Spitters 1986 concise approaches;
  *                  lrc_style::nonrectangular_hyperbola = not implemented yet! For inspiration, see LICOR method and CO2 gas exchange papers.
  * @return {A_gross_canop, LAI_sl_canop, f_sl_canop, A_sl_gross_canop, A_sh_gross_canop} (hourly gross photosynthesis of the whole canopy [g CO2 m-2 ground h-1], sunlit LAI, fraction sunlit, sunlit & shaded hourly gross photosynthesis of the whole canopy [g CO2 m-2 ground h-1]).
+ * 
+ * @see hPhoto::Spitters_canop_photo_dL
+ * @see hPhoto::Spitters_canop_photo_multilayer
  */
 photo_result Spitters_canop_photo_3p(double beta, double LAI, double I0_dr, double I0_df, double A_m, double epsilon, double k_df=0.6, double sigma=0.2, bool kgpha=false, hPhoto::la_integ_style leaf_angle_integration_style=hPhoto::la_integ_style::spitters86_custom, hPhoto::lrc_style lrc=hPhoto::lrc_style::exponential);
 
@@ -331,7 +337,10 @@ struct Spitters_canop_radiation_dL_result {
     double Ia_dr;   // absorbed direct radiation (leaf level)
 };
 /**
- * @brief 
+ * @brief calculate radiation variables per canopy layer
+ * 
+ * @cite Spitters CJT (1986). Separating the diffuse and direct component of global radiation and its implications for modeling canopy photosynthesis Part II. Calculation of canopy photosynthesis. Agricultural and Forest Meteorology, 38(1-3), 231-242. https://doi.org/10.1016/0168-1923(86)90061-4
+ * @cite Spitters CJT, van Keulen H & van Kraalingen DWG (1989). A simple and universal crop growth simulator: SUCROS87. in R Rabbinge, SA Ward & HH van Laar (eds), Simulation and systems management in crop protection. Simulation monographs, Pudoc, Wageningen, pp. 147-181. https://edepot.wur.nl/171923
  * 
  * @param beta  solar elevation angle [rad].
  * @param L     partial cumulated leaf area index at various canopy depths (= LAIC from Spitters et al. 1989).
@@ -349,13 +358,21 @@ struct Spitters_canop_radiation_dL_result {
  * @param sigma scattering coefficient of single leaves and for visible radiation [-]. Default is 0.2.
  *                See Spitters et al. (1989). In the order of 0.20. 0.20 for spring wheat, maize, potato, sugar beet.
  * @param kgpha input (A_m, epsilon) and output unit in [kg ha-1] instead of [g m-2]. Default is false.
- * @return Spitters_canop_radiation_dL_result 
+ * @return Spitters_canop_radiation_dL_result
+ * 
+ * @see hPhoto::Spitters_A_sh_dL
+ * @see hPhoto::Spitters_A_sl_dL
+ * @see hPhoto::Spitters_canop_photo_dL
+ * @see hPhoto::Spitters_canop_photo_multilayer
  */
 Spitters_canop_radiation_dL_result Spitters_canop_radiation_dL(double beta, double L, double I0_dr, double I0_df, double k_df=0.6, double sigma=0.2);
 
 
 /**
  * @brief 
+ * 
+ * @cite Spitters CJT (1986). Separating the diffuse and direct component of global radiation and its implications for modeling canopy photosynthesis Part II. Calculation of canopy photosynthesis. Agricultural and Forest Meteorology, 38(1-3), 231-242. https://doi.org/10.1016/0168-1923(86)90061-4
+ * @cite Spitters CJT, van Keulen H & van Kraalingen DWG (1989). A simple and universal crop growth simulator: SUCROS87. in R Rabbinge, SA Ward & HH van Laar (eds), Simulation and systems management in crop protection. Simulation monographs, Pudoc, Wageningen, pp. 147-181. https://edepot.wur.nl/171923
  * 
  * @param Ia_sh      absorbed light shaded leaf
  * @param Amax_sh    assimilation rate at light saturation [g CO2 m-2 leaf h-1] (=asymptote of light response curve). Temperature-dependent.
@@ -364,12 +381,18 @@ Spitters_canop_radiation_dL_result Spitters_canop_radiation_dL(double beta, doub
  *                     MONICA: "transition between photosynthetic quantum use efficiency and light saturated photosynthesis".
  * @param lrc     light response curve style (see hPhoto::lrc_style). Default is hPhoto::lrc_style::exponential.
  * @return assimilation from shaded leaves for the canopy layer
+ * 
+ * @see hPhoto::Spitters_canop_radiation_dL
+ * @see hPhoto::Spitters_A_sl_dL
  */
 double Spitters_A_sh_dL(double Ia_sh, double Amax_sh, double epsilon_sh, hPhoto::lrc_style lrc=hPhoto::lrc_style::exponential);
 
 
 /**
  * @brief 
+ * 
+ * @cite Spitters CJT (1986). Separating the diffuse and direct component of global radiation and its implications for modeling canopy photosynthesis Part II. Calculation of canopy photosynthesis. Agricultural and Forest Meteorology, 38(1-3), 231-242. https://doi.org/10.1016/0168-1923(86)90061-4
+ * @cite Spitters CJT, van Keulen H & van Kraalingen DWG (1989). A simple and universal crop growth simulator: SUCROS87. in R Rabbinge, SA Ward & HH van Laar (eds), Simulation and systems management in crop protection. Simulation monographs, Pudoc, Wageningen, pp. 147-181. https://edepot.wur.nl/171923
  * 
  * @param A_sh       assimilation from shaded leaves for the canopy layer
  * @param Ia_sldr    absorbed light by a leaf perpendicular to the direct beam
@@ -382,7 +405,10 @@ double Spitters_A_sh_dL(double Ia_sh, double Amax_sh, double epsilon_sh, hPhoto:
  *                     lrc_style::exponential              = function type c*(1-exp(-x/c)), see Spitters 1986;
  *                     lrc_style::rectangular_hyperbola    = function type (c*x)/(c+x), see Spitters 1986 concise approaches;
  *                     lrc_style::nonrectangular_hyperbola = not implemented yet! For inspiration, see LICOR method and CO2 gas exchange papers.
- * @return assimilation from sunlit leaves for the canopy layer 
+ * @return assimilation from sunlit leaves for the canopy layer
+ * 
+ * @see hPhoto::Spitters_canop_radiation_dL
+ * @see hPhoto::Spitters_A_sh_dL 
  */
 double Spitters_A_sl_dL(double A_sh, double Ia_sldr, double Amax_sl, double epsilon_sl, bool kgpha, hPhoto::lrc_style lrc=hPhoto::lrc_style::exponential);
 
@@ -391,6 +417,9 @@ double Spitters_A_sl_dL(double A_sh, double Ia_sldr, double Amax_sl, double epsi
 
 // /**
 //  * @brief Gross assimilation ported from SUCROS87/WOFOST; for testing purposes and compariosn only
+//  * 
+//  * @cite Spitters CJT (1986). Separating the diffuse and direct component of global radiation and its implications for modeling canopy photosynthesis Part II. Calculation of canopy photosynthesis. Agricultural and Forest Meteorology, 38(1-3), 231-242. https://doi.org/10.1016/0168-1923(86)90061-4
+//  * @cite Spitters CJT, van Keulen H & van Kraalingen DWG (1989). A simple and universal crop growth simulator: SUCROS87. in R Rabbinge, SA Ward & HH van Laar (eds), Simulation and systems management in crop protection. Simulation monographs, Pudoc, Wageningen, pp. 147-181. https://edepot.wur.nl/171923
 //  * 
 //  * using a negative exponential light response curve with negative exponent
 //  * 

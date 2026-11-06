@@ -1633,11 +1633,13 @@ void CropModule::step(double vw_MeanAirTemperature, double vw_MaxAirTemperature,
  *
  * Taken from the original HERMES model, Kersebaum, K.C. and Richter J.
  * (1991): Modelling nitrogen dynamics in a plant-soil system with a
- * simple model for advisory purposes. Fert. Res. 27 (2-3), 273 - 281.
+ * simple model for advisory purposes. Fert. Res. 27 (2-3), 273 - 281. https://doi.org/10.1007/BF01051133
  *
  * @param vs_JulianDay
  *
  * @author Claas Nendel
+ * 
+ * @see also tool/algorithms Tools::hourlyRad
  */
 void CropModule::fc_Radiation(double vs_JulianDay, double vw_GlobalRadiation,
                               double vw_SunshineHours) {
@@ -2224,6 +2226,16 @@ void CropModule::fc_CropGreenArea(double vw_MeanAirTemperature, double d_LeafBio
 double CropModule::fc_SoilCoverage() const { return 1.0 - (cr::exp(-0.5 * vc_LeafAreaIndex)); }
 
 #include <fstream>
+/**
+ * @brief output csv structure for hourly photosynthesis outputs
+ * 
+ * @param closeFile
+ * @return ostream&
+ * 
+ * @author FS
+ * 
+ * @example if (cropPs.__enable_hourly_outputs__) {hout() << << currentDate.toIsoDateString() << "," << t << "," << speciesPs.pc_SpeciesId << "/" << cultivarPs.pc_CultivarId << "," << vc_DevelopmentalStage << "," << ... << endl;}
+ */
 ostream &monica::hout(bool closeFile) { // @ToDO FS: test this
 
   static ofstream out;
@@ -2372,6 +2384,18 @@ void CropModule::addAndDistributeRootBiomassInSoil(double rootBiomass) {
 
 #pragma region carboxylation limitation function
 
+/**
+ * @brief intercellular oxygen partial pressure
+ * 
+ * from Long 1991, Appendix I
+ * 
+ * @cite Long, S. P. (1991). Modification of the response of photosynthetic productivity to rising temperature by atmospheric CO2 concentrations: has its importance been underestimated?. Plant, Cell & Environment, 14(8), 729-739. https://doi.org/10.1111/j.1365-3040.1991.tb01439.x
+ * 
+ * @param vw_MeanAirTemperature
+ * @return Oi
+ * 
+ * @see CropModule::Ci_empirical
+ */
 double CropModule::Oi_empirical(double vw_MeanAirTemperature) const {
   // Oi = 210.0 + (0.047
   return 210.0 *
@@ -2381,6 +2405,21 @@ double CropModule::Oi_empirical(double vw_MeanAirTemperature) const {
          0.026934; // [mmol mol-1]
 };
 
+/**
+ * @brief intercellular CO2 partial pressure
+ * 
+ * from Long 1991, Appendix I
+ * 
+ * FS: approach to derive intercellular CO2 concentration Ci from Ca is quite simplified (no stomatal conductance coupling model).
+ * 
+ * @cite Long, S. P. (1991). Modification of the response of photosynthetic productivity to rising temperature by atmospheric CO2 concentrations: has its importance been underestimated?. Plant, Cell & Environment, 14(8), 729-739. https://doi.org/10.1111/j.1365-3040.1991.tb01439.x
+ * 
+ * @param vw_MeanAirTemperature
+ * @param vw_AtmosphericCO2Concentration
+ * @return Ci
+ * 
+ * @see CropModule::Oi_empirical
+ */
 double CropModule::Ci_empirical(double vw_MeanAirTemperature,
                                 double vw_AtmosphericCO2Concentration) const {
 
@@ -2391,6 +2430,18 @@ double CropModule::Ci_empirical(double vw_MeanAirTemperature,
          0.73547; // [µmol mol-1]
 };
 
+/**
+ * @brief helper function to calculate vc_KTkc, vc_KTko, term1 and term2
+ * 
+ * @param vw_MeanAirTemperature 
+ * @return std::tuple<double, double, double, double> consisting of:
+ *  vc_KTkc  Factor needed to account for temperature-dependency of Michaelis-Menten constant for CO2 (photosynthesis method). and also used in CropModule::fc_CropDryMatter method.
+ *  vc_KTko  Factor to account for temperature-dependency of Michaelis-Menten constant for O2.
+ *  term1
+ *  term2
+ * 
+ * @author FS
+ */
 tuple<double, double, double, double>
 CropModule::fc_KTkc_vc_KTko_term1_term2(double vw_MeanAirTemperature) const {
   using namespace Voc;
@@ -2405,6 +2456,18 @@ CropModule::fc_KTkc_vc_KTko_term1_term2(double vw_MeanAirTemperature) const {
   return {vc_KTkc, vc_KTko, term1, term2};
 }
 
+/**
+ * @brief Rubisco-controlled rate of CO2 assimilation (=carboxylation-limited FvCB assimilation rate)
+ * 
+ * kept very close to the original MONICA daily photosyntheisis code for now
+ * 
+ * @param vw_MeanAirTemperature                Temperature used for temperature-dependency of FvCB RuBisCO limitation. For daily photosynthesis, daily mean air temperature is used for now.
+ *                                             For hourly photosynthesis, hourly mean air temperature is used for now (no canopy temperature implemented yet).
+ * @param Cc                                   Chloroplast CO2 partial pressure (=CO2 partial pressure at the carboxylating sites of Rubisco).
+ * @param O                                    Oxygen partial pressure.
+ * @param _cropPhotosynthesisResults           Default Voc::CPData monica::CropModule::_cropPhotosynthesisResults to be altered by the function. Seems to be a helper struct used for debugging?
+ * @return A_rubisco_results (vc_AssimilationRate, vc_AssimilationRateReference, vc_RadiationUseEfficiency, vc_RadiationUseEfficiencyReference, vc_KTkc)
+ */
 CropModule::A_rubisco_results CropModule::A_rubisco(double vw_MeanAirTemperature, double Cc,
                                                     double O,
                                                     Voc::CPData &_cropPhotosynthesisResults) const {
@@ -2528,9 +2591,11 @@ should automatically affect the 2nd step; in contrast, FvCB uses the both limita
 and takes the minimum) gb gs gm (boundary layer conductance, stomatal conductance, mesophyll
 conductance)
 
+This would probably require leaf temperature via energy balance, which has to be solved iteratively
+
 A(Ci) <-> gs coupling ... using a diffusional conductance model
 
-iterative solution (e.g. with Medlyn model)
+stomatal conductance iterative solution (e.g. with Medlyn model)
 double Ci = Ci_empirical(temperature, vw_AtmosphericCO2Concentration); // initial guess: e.g. Ci =
 0.7 * vw_AtmosphericCO2Concentration for ... auto A_rub_res = A_rubisco(temperature, Ci, O, CPData
 &_cropPhotosynthesisResults); A = A_rub_res.vc_AssimilationRate; Ci = ... gs = ...
@@ -2538,7 +2603,10 @@ double Ci = Ci_empirical(temperature, vw_AtmosphericCO2Concentration); // initia
   ... take into account MONICA pc_StomataConductanceAlpha and vc_StomataResistance variables? ...
 _cropPhotosynthesisResults.ci = Ci;
 
-analytical solution (not always possible; depents on type of stomatal conductance model)
+analytical solution (not always possible; depends on type of stomatal conductance model)
+-> if the light response curves make solving this analytically impossible here, an efficient iteration 
+   procedure is needed, since this iterates over the whole photosynthesis process (including leaf 
+   temperature, stomata conductance, photosynthesis and gas exchange feedbacks)
 also check lumped coefficients and stomatal conductanc coupling in photosynthesis-FvcB.cpp for an
 approach using an analytical solution for C3 crops and FvCB photosynthesis
 */
@@ -3601,6 +3669,8 @@ void CropModule::fc_CropPhotosynthesis(double vw_MeanAirTemperature, double vw_M
  * @param vw_MaxAirTemperature used for temperature disaggregation
  * @param vw_WindSpeed         used if no higher resolution wind speed is read in
  * @return CropModule::subdaily_data
+ * 
+ * @author FS
  */
 CropModule::subdaily_data CropModule::subdaily_meteodata(const Tools::Date &currentDate,
                                                          double vw_MinAirTemperature,
@@ -3793,6 +3863,15 @@ CropModule::subdaily_data CropModule::subdaily_meteodata(const Tools::Date &curr
  *
  * @return {vc_GrossCO2Assimilation_h, vc_GrossCO2AssimilationReference_h, KTkc, LAI_sunlit,
  * vc_GrossCO2Assimilation_sunlit_h}
+ * 
+ * @author FS
+ * 
+ * @see CropModule::fc_CanopyPhotosynthesis
+ * @see hPhoto::Spitters_canop_photo_3p
+ * @see CropModule::fc_KTkc_vc_KTko_term1_term2
+ * @see CropModule::Ci_empirical
+ * @see CropModule::Oi_empirical
+ * @see CropModule::A_rubisco
  */
 CropModule::GP_results
 CropModule::fc_CropGrossPhotosynthesis_h(double inst_diff_rad, double inst_dir_rad,
@@ -4013,7 +4092,7 @@ CropModule::GP_results CropModule::subdaily_photosynthesis(size_t i,
 }
 
 /**
- * @brief resistances for the crop (not for the FAO reference grass)
+ * @brief CURRENTLY UNUSED - resistances for the crop (not for the FAO reference grass)
  *
  * @param vc_VapourPressure               actual vapour pressure e_a [kPa]
  * @param vc_SaturatedVapourPressure      saturation vapour pressure e_s [kPa]
@@ -4026,6 +4105,8 @@ CropModule::GP_results CropModule::subdaily_photosynthesis(size_t i,
  * @param vw_WindSpeed                    [m s-1]
  * @param vw_WindSpeedHeight              [m]
  * @return crop_r {crop_AerodynamicResistance, crop_StomataResistance, crop_SurfaceResistance}
+ * 
+ * @author FS
  */
 CropModule::crop_r CropModule::crop_aerodyn_stomata_surface_resistances(
     double vc_SaturatedVapourPressure, double vc_VapourPressure, double vc_CropHeight,
@@ -5054,10 +5135,9 @@ pair<vector<double>, double> CropModule::calcRootDensityFactorAndSum() {
 /**
  * @brief Reference evapotranspiration
  *
- * A method following Penman-Monteith as described by the FAO in Allen
- * RG, Pereira LS, Raes D, Smith M. (1998) Crop evapotranspiration.
- * Guidelines for computing crop water requirements. FAO Irrigation and
- * Drainage Paper 56, FAO, Roma
+ * A method following Penman-Monteith as described by the FAO in Allen et al. 1998
+ * 
+ * @cite Allen RG, Pereira LS, Raes D, Smith M. (1998) Crop evapotranspiration. Guidelines for computing crop water requirements. FAO Irrigation and Drainage Paper 56, FAO, Roma. https://www.fao.org/4/x0490e/x0490e00.htm
  *
  * @param vs_HeightNN Height above sea level
  * @param vw_MaxAirTemperature Maximal air temperature for the calculated day
@@ -5065,7 +5145,7 @@ pair<vector<double>, double> CropModule::calcRootDensityFactorAndSum() {
  * @param vw_RelativeHumidity Relative humidity
  * @param vw_MeanAirTemperature Mean air temperature
  * @param vw_WindSpeed Spped of wind
- * @param vw_WindSpeedHeight Height in which the wind speed has been measured *
+ * @param vw_WindSpeedHeight Height in which the wind speed has been measured
  * @param vc_GlobalRadiation Global radiation
  * @param vw_AtmosphericCO2Concentration CO2 concentration in the athmosphere
  * (needed for photosynthesis)
@@ -5206,12 +5286,9 @@ double CropModule::fc_ReferenceEvapotranspiration(double vw_MaxAirTemperature,
 /**
  * @brief Reference evapotranspiration hourly
  *
- * modified version of fc_ReferenceEvapotranspiration(...)
- *
- * Based on Penman-Monteith as described by the FAO in Allen
- * RG, Pereira LS, Raes D, Smith M. (1998) Crop evapotranspiration.
- * Guidelines for computing crop water requirements. FAO Irrigation and
- * Drainage Paper 56, FAO, Roma
+ * hourly modified version of fc_ReferenceEvapotranspiration(...), based on Penman-Monteith as described by the FAO in Allen et al. 1998
+ * 
+ * @cite Allen RG, Pereira LS, Raes D, Smith M. (1998) Crop evapotranspiration. Guidelines for computing crop water requirements. FAO Irrigation and Drainage Paper 56, FAO, Roma. https://www.fao.org/4/x0490e/x0490e00.htm
  *
  * @ToDo FS: Some papers apparently report systematic overestimation for this hourly equation when
  * compared to the daily one. Check if this also happens here, and if so, which equation is more
@@ -5241,6 +5318,10 @@ double CropModule::fc_ReferenceEvapotranspiration(double vw_MaxAirTemperature,
  *                          (For daily calculations however, the soil heat flux is often neglected -
  * so for comparisons, it might be useful to be able to switch it off.)
  * @return Reference evapotranspiration for the hour
+ * 
+ * @author FS
+ * 
+ * @see CropModule::fc_ReferenceEvapotranspiration
  */
 double CropModule::fc_ReferenceEvapotranspiration_h(
     double vw_DewAirTemperature, double vw_RelativeHumidity_h, double vw_MeanAirTemperature_h,
@@ -5465,15 +5546,13 @@ double CropModule::fc_ReferenceEvapotranspiration_h(
 }
 
 /**
- * @brief Reference evapotranspiration - FOR DEBUGGING/COMPARISON ONLY!
+ * @brief FOR DEBUGGING/COMPARISON ONLY - Reference evapotranspiration!
  *
- * A method following Penman-Monteith as described by the FAO in Allen
- * RG, Pereira LS, Raes D, Smith M. (1998) Crop evapotranspiration.
- * Guidelines for computing crop water requirements. FAO Irrigation and
- * Drainage Paper 56, FAO, Roma
+ * A method following Penman-Monteith as described by the FAO in Allen et al. 1998
  *
- * The vc_StomataResistance is used internally only and does NOT update
- * CropModule::vc_StomataResistance.
+ * The vc_StomataResistance is used internally only and does NOT update CropModule::vc_StomataResistance.
+ * 
+ * @cite Allen RG, Pereira LS, Raes D, Smith M. (1998) Crop evapotranspiration. Guidelines for computing crop water requirements. FAO Irrigation and Drainage Paper 56, FAO, Roma. https://www.fao.org/4/x0490e/x0490e00.htm
  *
  * @param vs_HeightNN Height above sea level
  * @param vw_MaxAirTemperature Maximal air temperature for the calculated day
@@ -5487,6 +5566,10 @@ double CropModule::fc_ReferenceEvapotranspiration_h(
  * photosynthesis)
  * @param vc_GrossPhotosynthesisReference_mol under well watered conditions
  * @return Reference evapotranspiration
+ * 
+ * @author FS
+ * 
+ * @see CropModule::fc_ReferenceEvapotranspiration
  */
 double CropModule::fc_ReferenceEvapotranspiration_notApplied(
     double vw_MaxAirTemperature, double vw_MinAirTemperature, double vw_RelativeHumidity,
@@ -5897,7 +5980,9 @@ void CropModule::fc_CropWaterUptake(size_t vc_GroundwaterTable, double vw_GrossP
  * @param vc_NetPrecipitation
  *
  * @return {vc_InterceptionStorage, vc_NetPrecipitation}
- *
+ * 
+ * @author FS
+ * 
  * @see CropModule::fc_CropWaterUptake
  * @see CropModule::fc_CropWaterUptake_h
  */
@@ -5977,6 +6062,12 @@ void CropModule::update_extracted_soilColumn_params_from_daily() {
  * @param vc_GroundwaterTable
  * @param vc_ReferenceEvapotranspiration_h
  * @param vc_OxygenDeficit_h
+ * 
+ * @author FS
+ * 
+ * @see CropModule::fc_CropInterception
+ * @see CropModule::fc_CropWaterUptake
+ * @see CropModule::fc_ReferenceEvapotranspiration_h
  */
 void CropModule::fc_CropWaterUptake_h(
     size_t vc_GroundwaterTable,
@@ -6249,8 +6340,7 @@ void CropModule::fc_CropWaterUptake_h(
 }
 
 /**
- * @brief  calculate hourly water uptake by the crop, without actually applying it - FOR
- * DEBUGGING/COMPARISON ONLY!
+ * @brief FOR DEBUGGING/COMPARISON ONLY - calculate hourly water uptake by the crop, without actually applying it!
  *
  *  In this function the potential transpiration calcuated from potential
  *  evapotranspiration by soil cover fraction is reduced by water availability
@@ -6265,6 +6355,10 @@ void CropModule::fc_CropWaterUptake_h(
  * @param potET_limit                       using 6.5 mm d-1 or 1.0 mm h-1 for now; find a source
  * for realistic maximal hourly potential crop ET
  * @return vc_Transpiration, vc_TranspirationDeficit
+ * 
+ * @author FS
+ * 
+ * @see CropModule::fc_CropWaterUptake
  */
 std::pair<std::vector<double>, double> CropModule::fc_CropWaterUptake_notApplied(
     const size_t vc_GroundwaterTable, const double vc_ReferenceEvapotranspiration,
