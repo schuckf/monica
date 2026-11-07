@@ -8,7 +8,7 @@
             "name": "Debug Monica (cppvsdbg)",
             "type": "cppvsdbg",
             "request": "launch",
-            "preLaunchTask": "pixi: Build Solution x64 Debug",
+            "preLaunchTask": "pixi: Build x64 Debug",
             "program": "${workspaceFolder}/_cmake_debug/monica-run.exe",
             "args": ["installer/Hohenfinow2/sim-hp.json"],
             "stopAtEntry": false,
@@ -24,7 +24,7 @@
             "name": "Debug MONICA EX478",
             "type": "cppvsdbg",
             "request": "launch",
-            "preLaunchTask": "pixi: Build Solution x64 Debug",
+            "preLaunchTask": "pixi: Build x64 Debug",
             "program": "${workspaceFolder}/_cmake_debug/monica-run.exe",
             "args": [
                 "-op",
