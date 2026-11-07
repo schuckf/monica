@@ -738,7 +738,7 @@ struct DLL_API CropModuleParameters : public Tools::Json11Serializable {
   double pc_GrowthRespirationParameter2{0.0};
   double pc_Tortuosity{0.0};
   bool pc_AdjustRootDepthForSoilProps{true};
-  std::vector<int> pc_TimeUnderAnoxiaThreshold{4, 4, 4, 4, 4, 4, 4};
+  std::vector<int> pc_TimeUnderAnoxiaThreshold{365, 365, 365, 365, 365, 365, 365};
 
   bool __enable_Phenology_WangEngelTemperatureResponse__{ false };
   bool __enable_Photosynthesis_WangEngelTemperatureResponse__{ false };
