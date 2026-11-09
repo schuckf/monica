@@ -1085,13 +1085,12 @@ void CropModule::step(double vw_MeanAirTemperature, double vw_MaxAirTemperature,
       const hPhoto::unit out_unit = hPhoto::unit::Jpm2ph; // hPhoto::unit::MJpm2ps;
       bool cscor = true;  // circumsolar correction for fraction diffuse
       bool parcor = true; // PAR wavelenghts correction for fraction diffuse
-      /*@ToDo FS: With active Agri-PV shading addon, enforce using PAR direct and PAR diffuse based
-      on corrected fraction diffuse
-      //          for some other use cases, since both often mostly cancel out, they can also be set
-      to false to save computation time if (cropPs.__enable_agripv_addon__) { cscor = true; parcor =
-      true;
-      }
-      */
+      //@ToDo FS: With active Agri-PV shading addon, enforce using PAR direct and PAR diffuse based
+      //          on corrected fraction diffuse; for some other use cases, since both often mostly
+      //          cancel out, they could also be set to false to save computation time
+      // if (cropPs.__enable_agripv_addon__) { cscor = true; parcor =
+      // true;
+      // }
 
       auto sp =
           subdaily_meteodata(currentDate, vw_MinAirTemperature, vw_MaxAirTemperature, vw_WindSpeed);
@@ -1561,8 +1560,7 @@ void CropModule::step(double vw_MeanAirTemperature, double vw_MaxAirTemperature,
         vc_GrossPhotosynthesis = vc_NetMaintenanceRespiration;
       }
 
-      // @ToDo FS: These factors might not be needed hourly?
-      // hourly heat stress impact and hourly frost kill
+      // @ToDo FS: hourly heat stress impact and hourly frost kill
       // FS: In the Agri-PV context, it would make sense to somehow take the dampened temperature
       // dynamic into account.
       //     However, from looking at the code, I think adapting
@@ -1570,10 +1568,10 @@ void CropModule::step(double vw_MeanAirTemperature, double vw_MaxAirTemperature,
       //     sense with a reliable way to calculate vc_PhotoTemperature_h and vc_CrownTemperature_h,
       //     ideally using leaf or canopy temperature from the hourly photosynthesis model (however,
       //     in MONICA, there is no leaf or canopy temperature yet). Also, with each change, risk of
-      //     reducing consistency with default daily MONICA increases. So for now, the simpest
+      //     reducing consistency with default daily MONICA increases. So for now, the simplest
       //     solution might be to outsource the temperature effects of Agri-PV to the input data
       //     vw_MaxAirTemperature and vw_MinAirTemperature, which are to be provided by the user.
-      // @ToDo FS: Check in the original articles how the theory behind this could be adapted to
+      // @ToDo FS: Check in the original articles if/how the theory behind this could be adapted to
       // hourly resolution.
 
       fc_HeatStressImpact(vw_MaxAirTemperature,
@@ -2289,7 +2287,7 @@ double CropModule::fc_SoilCoverage() const { return 1.0 - (cr::exp(-0.5 * vc_Lea
  * 
  * @example if (cropPs.__enable_hourly_outputs__) {hout() << << currentDate.toIsoDateString() << "," << t << "," << speciesPs.pc_SpeciesId << "/" << cultivarPs.pc_CultivarId << "," << vc_DevelopmentalStage << "," << ... << endl;}
  */
-ostream &monica::hout(bool closeFile) { // @ToDO FS: test this
+ostream &monica::hout(bool closeFile) {
 
   static ofstream out;
   static bool init = false;
@@ -5501,13 +5499,14 @@ double CropModule::fc_ReferenceEvapotranspiration_h(
 
     // crop stomata resistance according to Yu et al. 2001 (FS: Is this based on eq. 1c, with r_s =
     // 1/g_sc? Eq. 1c seems to be for gs_CO2 however, not for H20. Is this being taken into account
-    // via the parameters)? FS: - this should be for H2O diffusion in order to make sense (ET
-    // context and higher resistance to H2O with higher atm. CO2,
-    //       resulting in lower water loss through crop ET), but check again in the actual paper!
+    // via the parameters)?
+    // FS: - this should be for H2O diffusion in order to make sense (ET context and higher 
+    //       resistance to H2O with higher atm. CO2, resulting in lower water loss through crop ET),
+    //       but check again in the actual paper!
     //     - also, Cs is assumed to be equal to Ca (vw_AtmosphericCO2Concentration) here, which is a
-    //     rough simplification
+    //       simplification to be aware of here
     // @ToDo FS: Check what needs to happen here when moving towards a stomatal conductance coupling
-    // approach (also for CO2, not just for H2O)!
+    //           approach (also for CO2, not just for H2O)!
     //           Remember that this here is all about the reference crop stomata resistance (not the
     //           actual crop stomata resistance)!
     if (pc_CarboxylationPathway == 1) {
@@ -5526,19 +5525,18 @@ double CropModule::fc_ReferenceEvapotranspiration_h(
 
   vc_SurfaceResistance_h =
       vc_StomataResistance_h /
-      1.44; // FS: FAO-56 assumes 70 [s m-1] surface resistance for the reference crop, which is 100
-            // / 1.44 [s m-1], so the
-            //     single well-illuminated leaf bulk stomatal resistance 100 [s m-1] divided by the
-            //     active (sunlit) leaf area index 1.44 comes from the definition of the FAO-56
-            //     grass, which has an active (sunlit) leaf area index of 0.5*24*0.12 (details see
-            //     eq.5 and Box 5 in Chapter 2 - FAO Penman-Monteith equation -> (Bulk) surface
-            //     resistance (rs), available at
-            //     https://www.fao.org/4/x0490e/x0490e06.htm#(bulk)%20surface%20resistance%20(rs))
+      1.44; // FS: FAO-56 assumes 70 [s m-1] surface resistance for the reference crop, which equals
+            //     100/1.44 [s m-1], so the single well-illuminated leaf bulk stomatal resistance 
+            //     100 [s m-1] divided by the active (sunlit) leaf area index 1.44 comes from the 
+            //     definition of the FAO-56 grass, which has an active (sunlit) leaf area index of 
+            //     0.5*24*0.12 (details see eq.5 and Box 5 in Chapter 2 - FAO Penman-Monteith 
+            //     equation -> (Bulk) surface resistance (rs), available at
+            //     https://www.fao.org/4/x0490e/x0490e06.htm#(bulk)%20surface%20resistance%20(rs) )
 
   // vc_SurfaceResistance_h = vc_StomataResistance_h / (vc_CropHeight * vc_LeafAreaIndex);
 
   // vc_SurfaceResistance_h = is_daytime ? 50 : 200;    // FS: Regarding the use of a fixed surface
-  // resistance value for hourly time steps, it seems to be better to differentiate
+  //     resistance value for hourly time steps, it seems to be better to differentiate
   //     between daytime (50 [s m-1]) and nighttime (200 [s m-1]) resistances according to Allen et
   //     al. 2006 (https://doi.org/10.1016/j.agwat.2005.03.007). However, due to the
   //     vc_GrossPhotosynthesisReference_mol_h dependency implemented in the calculation of
@@ -5583,21 +5581,19 @@ double CropModule::fc_ReferenceEvapotranspiration_h(
   }
 
   double vc_NetShortwaveRadiation_h = (1.0 - pc_ReferenceAlbedo) * vc_GlobalRadiation_h;
-                              // @ToDo FS: Should global radiation used here be
-                              // affected by Agri-PV or not?
-                              // @ToDo FS: For Agri-PV, use reduced global radiation, since shading
-                              // leads to less shortwave radiation and therefore less ET.
+                              // @ToDo FS: Should global radiation used here be affected by Agri-PV?
+                              // FS: For Agri-PV, use reduced global radiation, since shading leads
+                              //     to less shortwave radiation and therefore less ET.
 
   // for hourly time steps, according to Chapter 4 - Determination of ETo, Penman-Monteith equation
-  // -> ETo calculated with different time steps
   // (https://www.fao.org/4/X0490E/x0490e08.htm#eto%20calculated%20with%20different%20time%20steps)
-  // -> Hourly time step, the Stefan-Bolzmann constant becomes (4.903/24) 10-9 = 2.043 10-10 MJ m-2
-  // hour-1. The (tmin^4 + tmax^4) / 2.0 is replaced with hourly tmean^4 (since for hourly time
-  // steps temperature variations are much smaller). double pc_BolzmanConstant =   0.0000000049; //
-  // Bolzmann constant 4.903 * 10-9 MJ m-2 K-4 d-1   // FS: this is actually the Stefan-Boltzmann
-  // constant, NOT the Boltzmann constant! double pc_BolzmanConstant_h = 0.0000000002043; //
-  // Stefan-Boltzmann constant 2.043 10-10 MJ m-2 K-4 hour-1 (not to be confused with the Boltzmann
-  // constant!)
+  // -> ETo calculated with different time steps -> Hourly time step, the Stefan-Bolzmann constant 
+  // becomes (4.903/24) 10-9 = 2.043 10-10 MJ m-2 hour-1. The (tmin^4 + tmax^4) / 2.0 is replaced 
+  // with hourly tmean^4 (since for hourly time steps temperature variations are much smaller).
+
+  // double pc_BolzmanConstant = 0.0000000049;  // Bolzmann constant 4.903 * 10-9 MJ m-2 K-4 d-1
+  // FS: this is actually the Stefan-Boltzmann constant, NOT the Boltzmann constant!
+  // hourly 0.0000000002043 vs. daily 0.0000000049
   double pc_BolzmanConstant_h =
       0.0000000002043 *
       vc_OverclockingTimeStep; // Stefan-Boltzmann constant for the vc_OverclockingTimeStep (not to

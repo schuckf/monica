@@ -383,11 +383,11 @@ photo_result hPhoto::Spitters_canop_photo_3p(double beta, double LAI, double I0_
   static const double gaussian_weights[3] = {0.277778, 0.444444, 0.277778};
 
   // selection of canopy depths (LAIC from top)
-  double A_canop = 0., L, A = 0.;
+  double A_canop = 0.;
   double f_sl_canop = 0., A_sl_canop = 0., A_sh_canop = 0.;
 
   for (int l = 0; l < 3; ++l) {
-    L = LAI * canopy_layers[l];  // partial cumulated leaf area index at various canopy depths (= LAIC from Spitters et al. 1989)
+    double L = LAI * canopy_layers[l];  // partial cumulated leaf area index at various canopy depths (= LAIC from Spitters et al. 1989)
 
     // photosynthesis of canopy layer at gaussian integration point l
     // A = Spitters_canop_photo_dL(beta, L, I0_dr, I0_df, A_m, epsilon, k_df, sigma, kgpha, leaf_angle_integration_style);
