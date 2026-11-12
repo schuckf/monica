@@ -1,7 +1,8 @@
 # The setup-free builds from the README - pixi on Linux and Windows, Nix, and
 # the Docker image built from it - each running the test suites
 # (tests/suites.toml). The compare job then checks that all of them give the
-# same results as the Nix build, which is what the Docker image ships.
+# same results as the Nix build, which is what the Docker image ships, and the
+# validate job compares the simulations with measurements (tests/validate.py).
 name: Build and test
 
 on:
@@ -140,3 +141,144 @@ jobs:
             python3 tests/compare.py "$ref" "$r" || status=1
           done
           exit $status
+
+  # Simulated vs measured (tests/validate.py) for the suites with measurements,
+  # from the Nix build's results (all builds give the same). Information only,
+  # it doesn't fail the build: statistics on the run page, with the change of
+  # the RMSE since the previous master build; plots in the report artifact.
+  validate:
+    needs: nix
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read  # the previous master build's validation.json
+      contents: read
+    env:
+      # master pushes and tags are published to zalf-rpm/monica_validation
+      # (GitHub Pages: statistics over time), if the deploy key is set up
+      PUBLISH: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/')) && secrets.VALIDATION_DEPLOY_KEY != '' }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: tests
+
+      - uses: prefix-dev/setup-pixi@v0.11.2
+        with:
+          environments: validate
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: results-nix-linux
+          path: results
+
+      - name: Baseline from the previous master build
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          runs=$(gh run list -R "$GITHUB_REPOSITORY" -w build.yml -b master -e push -L 20 \
+                   --json databaseId,headSha --jq ".[] | select(.headSha != \"$GITHUB_SHA\") | .databaseId")
+          for id in $runs; do
+            gh run download "$id" -R "$GITHUB_REPOSITORY" -n validation-json -D baseline 2>/dev/null \
+              && { echo "baseline: run $id"; break; }
+          done
+          true
+
+      - name: Simulated vs measured
+        run: pixi run -e validate validate results --out validation --baseline baseline/validation.json --summary ''
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: validation-json
+          path: validation/validation.json
+          retention-days: 90
+
+      # everything, for the release-results job
+      - uses: actions/upload-artifact@v7
+        with:
+          name: validation
+          path: validation
+          retention-days: 14
+
+      # not zipped, so it is a single HTML file with the plots
+      - uses: actions/upload-artifact@v7
+        id: report
+        with:
+          path: validation/report.html
+          archive: false
+          retention-days: 30
+
+      - name: Run page summary
+        run: |
+          {
+            echo "**Plots:** [report.html](${{ steps.report.outputs.artifact-url }}) (simulation as lines, measurements as dots)"
+            echo
+            cat validation/report.md
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/checkout@v7
+        if: env.PUBLISH == 'true'
+        with:
+          repository: zalf-rpm/monica_validation
+          ssh-key: ${{ secrets.VALIDATION_DEPLOY_KEY }}
+          path: site
+
+      - name: Publish to zalf-rpm/monica_validation
+        if: env.PUBLISH == 'true'
+        working-directory: site
+        env:
+          DATE: ${{ github.event.head_commit.timestamp }}
+          MESSAGE: ${{ github.event.head_commit.message }}
+          TAG: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
+        run: |
+          git config user.name "monica CI"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # another run may have pushed meanwhile: then start again from its state
+          for attempt in 1 2 3 4 5; do
+            git fetch --quiet origin main && git reset --quiet --hard origin/main
+            python3 update.py --validation ../validation --commit "$GITHUB_SHA" \
+              --date "${DATE:-$(date -u +%FT%TZ)}" --message "$MESSAGE" ${TAG:+--tag "$TAG"}
+            git add -A
+            git diff --cached --quiet && break  # e.g. a rerun: nothing new
+            git commit --quiet -m "MONICA ${GITHUB_SHA::10}${TAG:+ ($TAG)}: ${MESSAGE%%$'\n'*}"
+            git push --quiet origin HEAD:main && break
+            [ "$attempt" = 5 ] && { echo "::error::could not push to monica_validation"; exit 1; }
+            sleep $((attempt * 5))
+          done
+          echo "**Over time:** https://zalf-rpm.github.io/monica_validation/" >> "$GITHUB_STEP_SUMMARY"
+
+  # For tags: the Nix build's test results and the validation report as an
+  # asset of the release, e.g. to compare a later version with it
+  # (tests/compare.py, deviation.py, validate.py --baseline). The release may
+  # not exist yet (on-tag.yml creates it too): whichever job comes first
+  # creates the draft.
+  release-results:
+    needs: [nix, validate]
+    if: ${{ !cancelled() && startsWith(github.ref, 'refs/tags/') && needs.nix.result == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: results-nix-linux
+          path: results
+
+      - uses: actions/download-artifact@v8
+        if: needs.validate.result == 'success'
+        with:
+          name: validation
+          path: validation
+
+      - name: Upload to the release
+        run: |
+          file="monica-test-results_${TAG}.tar.xz"
+          dirs=(results); [ -d validation ] && dirs+=(validation)
+          tar -cJf "$file" "${dirs[@]}"
+          gh release view "$TAG" >/dev/null 2>&1 \
+            || gh release create "$TAG" --draft --title "Monica $TAG" \
+            || gh release view "$TAG" >/dev/null  # created by on-tag.yml meanwhile
+          gh release upload "$TAG" "$file" --clobber
