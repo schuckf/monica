@@ -65,7 +65,8 @@ double hPhoto::diffuse_fraction_daily_f(double globrad, double extra_terr_rad, d
   }
   else if (glob_extra_ratio < 0.35)   // eq. 2b
   {
-    return 1. - 2.3 * cr::pow((glob_extra_ratio - 0.07), 2);
+    double glob_extra_ratio_minus_0pt07 = glob_extra_ratio - 0.07;
+    return 1. - 2.3 * (glob_extra_ratio_minus_0pt07 * glob_extra_ratio_minus_0pt07);
   }
   else if (glob_extra_ratio < 0.75)   // eq. 2c
   {
@@ -83,7 +84,8 @@ double hPhoto::diffuse_fraction_hourly_f(double globrad, double extra_terr_rad, 
   // Spitters et al. 1986 eq. 20 (hourly)
   assert(extra_terr_rad > eps);
   double glob_extra_ratio = globrad / extra_terr_rad;
-  double R = (0.847 - 1.61 * cr::sin(solar_elev) + 1.04 * cr::pow(cr::sin(solar_elev), 2));
+  double sin_solar_elev = cr::sin(solar_elev);
+  double R = 0.847 - 1.61 * sin_solar_elev + 1.04 * (sin_solar_elev * sin_solar_elev);
   double K = (1.47 - R) / 1.66;
 
   if (glob_extra_ratio <= 0.22)       // eq. 20a
@@ -92,7 +94,8 @@ double hPhoto::diffuse_fraction_hourly_f(double globrad, double extra_terr_rad, 
   }
   else if (glob_extra_ratio <= 0.35)  // eq. 20b
   {
-    return 1. - 6.4 * cr::pow((glob_extra_ratio - 0.22), 2);
+    double glob_extra_ratio_minus_0pt22 = glob_extra_ratio - 0.22;
+    return 1. - 6.4 * (glob_extra_ratio_minus_0pt22 * glob_extra_ratio_minus_0pt22);
   }
   else if (glob_extra_ratio <= K)     // eq. 20c
   {
@@ -116,7 +119,9 @@ double hPhoto::diffuse_fraction_cscor(double diffuse_fraction, double solar_elev
   {
     throw invalid_argument("diffuse_fraction_cscor calculation failed! requires 0 <= solar_elevation <= 0.5*pi");
   }*/
-  return 1. / (1. + (1. - cr::pow(diffuse_fraction, 2)) * cr::pow(cr::cos(0.5 * M_PI - solar_elevation), 2) * cr::pow(cr::cos(solar_elevation), 3)); // Spitters eq. 9
+  double cos_solar_elev = cr::cos(solar_elevation);
+  double cos_0pt5pi_minus_solar_elev = cr::cos(0.5 * M_PI - solar_elevation);
+  return 1. / (1. + (1. - (diffuse_fraction * diffuse_fraction)) * (cos_0pt5pi_minus_solar_elev * cos_0pt5pi_minus_solar_elev) * (cos_solar_elev * cos_solar_elev * cos_solar_elev)); // Spitters eq. 9
 }
 
 double hPhoto::diffuse_fraction_parcor(double diffuse_fraction)
@@ -126,7 +131,7 @@ double hPhoto::diffuse_fraction_parcor(double diffuse_fraction)
   {
     throw invalid_argument("diffuse_fraction_cscor calculation failed! requires 0 <= diffuse_fraction <= 1");
   }*/
-  return 1. + 0.3 * (1. - cr::pow(diffuse_fraction, 2)); // Spitters eq. 10
+  return 1. + 0.3 * (1. - (diffuse_fraction * diffuse_fraction)); // Spitters eq. 10
 }
 
 hPhoto::PAR_radiation_result hPhoto::PAR_radiation(double global_rad, double extra_terr_rad, double solar_el, bool cscor, bool parcor, double parfrac, hPhoto::unit out_unit)
@@ -192,7 +197,7 @@ dL_result hPhoto::Spitters_canop_photo_dL(double beta, double L, double I0_dr, d
   // eq. 2, eq. 3, eq. 4
   // I_L = (1. - rho) * I0 * exp(-k * L)
   // I_df = (1. - rho) * I0_df * exp(-k_df * L)
-  // I_dr = (1. - rho) * I0_dr * exp(- pow(1. - sigma, 0.5) * k_bl * L)
+  // I_dr = (1. - rho) * I0_dr * exp(- cr::pow(1. - sigma, 0.5) * k_bl * L)
 
   // "On its way through the canopy a part of the direct flux which is intercepted by the leaves is scattered by those leaves;
   // hence, the direct flux segregates into a diffused, scattered component and another component which remains direct."
@@ -203,14 +208,14 @@ dL_result hPhoto::Spitters_canop_photo_dL(double beta, double L, double I0_dr, d
   // "For a spherical leaf angle distribution with leaves distributed randomly within the canopy volume, the extinction coefficients of the diffuse flux
   // and that of the direct component of the direct flux are approximated, respectively, by (Goudriaan, 1977, 1982):"
   // eq. 7
-  // k_df = 0.8 * pow(1. - sigma, 0.5)  // extinction coefficient diffuse
+  // k_df = 0.8 * cr::pow(1. - sigma, 0.5)  // extinction coefficient diffuse
   // k_bl = 0.5 / sinbeta               // extinction coefficient for black leaves (neither transmission nor reflection); "0.5 points to the average projection on the ground surface of leaves showing a spherical angle distribution,
                                         // and 0.8 is the value of 0.5/sinbeta averaged over inclination beta of incident radiation under an overcast sky."
 
   // "Actual extinction coefficients deviate from the above theoretical values, mainly because leaves are clustered rather than randomly distributed.
   // Assuming that the leaf angle distribution is still spherical, eq. 7 gives as an approximation for the extinction coefficient of black leaves:
   // eq.8
-  // k_bl = 0.5 * k_df / (0.8 * pow(1. - sigma, 0.5) * sinbeta)
+  // k_bl = 0.5 * k_df / (0.8 * cr::pow(1. - sigma, 0.5) * sinbeta)
   // where the empirical, measured value of k_df is used rather than the theoretical value of eq. 7."
   */
   double clusterfactor = k_df / (0.8 * cr::pow(1. - sigma, 0.5)); // empirical k_df (clustered leaves) / theoretical k_df (randomly distributed leaves); clusterfactor (Spitters et al. 1989, p. 171)
@@ -223,9 +228,9 @@ dL_result hPhoto::Spitters_canop_photo_dL(double beta, double L, double I0_dr, d
 
   // eq. 10, eq. 11, eq. 12
   double Ia_df = (1. - rho) * I0_df * k_df * cr::exp(-k_df * L);                                                    // absorption of the diffuse flux, derived from eq. 3
-  // double Ia_dr = (1. - rho) * I0_dr * pow(1. - sigma, 0.5) * k_bl * exp(- pow(1. - sigma, 0.5) * k_bl * L);  // absorption of the direct flux, derived from eq. 4
+  // double Ia_dr = (1. - rho) * I0_dr * cr::pow(1. - sigma, 0.5) * k_bl * exp(- cr::pow(1. - sigma, 0.5) * k_bl * L);  // absorption of the direct flux, derived from eq. 4
   double Ia_dr = (sinbeta <= hPhoto::eps) ? 0.0 : (1. - rho) * I0_dr * k_dr * cr::exp(-k_dr * L);                   // eq. 11, re-arranged to use k_dr similarly to Spitters et al. (1989, p. 154), safeguard added
-  // double Ia_drdr = (1. - sigma) * I0_dr * k_bl * exp(- pow(1. - sigma, 0.5) * k_bl * L);                     // Of the direct component of the direct flux (eq. 5), the non-scattered part 1-sigma is absorbed
+  // double Ia_drdr = (1. - sigma) * I0_dr * k_bl * exp(- cr::pow(1. - sigma, 0.5) * k_bl * L);                     // Of the direct component of the direct flux (eq. 5), the non-scattered part 1-sigma is absorbed
   double Ia_drdr = (sinbeta <= hPhoto::eps) ? 0.0 : (1. - sigma) * I0_dr * k_bl * cr::exp(- k_bl * L);              // eq. 11, but with k_bl (instead of k_dr) in the exponent; similar to implementation in Spitters et al. (1989, p. 154), safeguard added
 
   // shaded leaf area
@@ -376,7 +381,7 @@ photo_result hPhoto::Spitters_canop_photo_3p(double beta, double LAI, double I0_
 
   // 3-point integration procedure from Spitters (1986)
   // eq. 20, eq. 21
-  // L = (0.5 + p * pow(0.15, 0.5)) * LAI;               // p = 1,0,1
+  // L = (0.5 + p * cr::pow(0.15, 0.5)) * LAI;               // p = 1,0,1
   // A_h = LAI * _A(_L) + 1.6*_A_(_L_) + A_(L_)) / 3.6;
 
   static const double canopy_layers[3] = {0.112702, 0.5, 0.887298};

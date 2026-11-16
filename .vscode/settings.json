@@ -15,5 +15,8 @@
 
   "C_Cpp.default.compileCommands": "${workspaceFolder}/_cmake_debug/compile_commands.json",
   "C_Cpp.default.intelliSenseMode": "windows-msvc-x64",
-  "C_Cpp.default.compilerPath": "cl.exe"
+  "C_Cpp.default.compilerPath": "cl.exe",
+  "files.associations": {
+    "complex": "cpp"
+  }
 }

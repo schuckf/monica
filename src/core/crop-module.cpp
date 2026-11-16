@@ -921,7 +921,7 @@ void CropModule::step(double vw_MeanAirTemperature, double vw_MaxAirTemperature,
 
   // // FS: calculate height-dependent atm. pressure and psychrometric constant (calculating this
   // once should be good enough) if (_noOfCropSteps == 0) {
-  //   vc_AtmosphericPressure = 101.3 * pow(((293.0 - (0.0065 * vs_HeightNN)) / 293.0), 5.26); //
+  //   vc_AtmosphericPressure = 101.3 * cr::pow(((293.0 - (0.0065 * vs_HeightNN)) / 293.0), 5.26); //
   //   atmospheric pressure [kPa], dependent on vs_HeightNN
   //   // vc_PsycrometerConstant = vc_AtmosphericPressure * Cp_air / (2450 * 0.622);           //
   //   latent heat of water vaporization, 2450 [kJ kg−1]; ratio molecular weight of water vapor/dry
@@ -1121,10 +1121,10 @@ void CropModule::step(double vw_MeanAirTemperature, double vw_MaxAirTemperature,
       vc_GrossAssimilates = 0.0;
       vc_MaintenanceRespirationAS = 0.0;
       vc_GrowthRespirationAS = 0.0;
-      vector<double> hourly_KTkc_day;
-      // vector<double> hourly_GP_day;
-      vector<double> hourly_ActualTranspiration_d;
-      vector<double> hourly_PotentialTranspiration_d;
+      vector<double> hourly_KTkc_day(vc_OcTS_num);
+      // vector<double> hourly_GP_day(vc_OcTS_num);
+      vector<double> hourly_ActualTranspiration_d(vc_OcTS_num);
+      vector<double> hourly_PotentialTranspiration_d(vc_OcTS_num);
 
       vc_ReferenceEvapotranspiration = 0.0; // FS: for comparison
 
@@ -1136,11 +1136,11 @@ void CropModule::step(double vw_MeanAirTemperature, double vw_MaxAirTemperature,
               vc_GrossCO2Assimilation_h_sl, leafT] =
             subdaily_photosynthesis(i, sp, vw_AtmosphericCO2Concentration, parfrac, cscor, parcor);
 
-        hourly_KTkc_day.push_back(KTkc);
+        hourly_KTkc_day[i] = KTkc;
 
         vc_GrossCO2Assimilation_h_pre = vc_GrossCO2Assimilation_h;
         assert(std::isfinite(vc_GrossCO2Assimilation_h));
-        // hourly_GP_day.push_back(vc_GrossCO2Assimilation_h);
+        // hourly_GP_day[i] = vc_GrossCO2Assimilation_h;
 
         // [TRANSPLANT SHOCK] Photosynthesis Limitation.
         // Reduces the daily gross CO2 assimilation rate according to the shock recovery efficiency
@@ -1351,8 +1351,8 @@ void CropModule::step(double vw_MeanAirTemperature, double vw_MaxAirTemperature,
         }
 
         // prepare aggregation back to daily time step
-        hourly_ActualTranspiration_d.push_back(vc_ActualTranspiration_h);
-        hourly_PotentialTranspiration_d.push_back(vc_PotentialTranspiration_h);
+        hourly_ActualTranspiration_d[i] = vc_ActualTranspiration_h;
+        hourly_PotentialTranspiration_d[i] = vc_PotentialTranspiration_h;
 
 #pragma endregion further hourly calculations
 
@@ -4295,10 +4295,11 @@ double CropModule::leafTemperature_Paw(double globalRad_Wpm2, double Ta_C,
       (287.1 *
        Ta_K); // air density [kg m-3],  using ideal gas law and specific gas constant for dry air
   double Cp_air = 1005.; // specific heat of air under constant pressure [J kg-1 K-1]
+  double Te_K_2 = Te_K * Te_K;
   double Ri =
       la_sw * globalRad_Wpm2 +
       la_lw * StefanBoltzmanConstant *
-          cr::pow(Te_K, 4.); // leaf absorption in short-wave and long-wave radiation, Yu et al. eq.9
+          Te_K_2 * Te_K_2; // leaf absorption in short-wave and long-wave radiation, Yu et al. eq.9
 
   // assuming that crop_AerodynamicResistance for heat and for water vapor is similar
   double he = rho_air * Cp_air /
@@ -4309,12 +4310,13 @@ double CropModule::leafTemperature_Paw(double globalRad_Wpm2, double Ta_C,
   double ht = rho_air * Cp_air / crop_AerodynamicResistance; // heat transfer coefficient, Paw 1987
                                                              // eq.14b (=Yu et al. 2001 eq.14)
 
+  double Ta_K_2 = Ta_K * Ta_K;
   // // dry surface temperature (operative temperature)
   // // Paw 1987 eq.4 and eq.5
-  // double term1 = epsi * StefanBoltzmanConstant * Ta_K * Ta_K;
+  // double term1 = epsi * StefanBoltzmanConstant * Ta_K_2;
   // double a = 6. * term1;
   // double b = ht + 4. * term1 * Ta_K;
-  // double c = term1 * Ta_K * Ta_K - Ri;
+  // double c = term1 * Ta_K_2 - Ri;
   // double term2 = b * b - 4. * a * c;
   // assert(term2 > 0.);
   // double delta_T = (-b + sqrt(term2)) / (2. * a); // positive sqrt
@@ -4322,12 +4324,12 @@ double CropModule::leafTemperature_Paw(double globalRad_Wpm2, double Ta_C,
 
   // // wet surface temperature of an organism
   // // linear Taylor approximation, Paw 1987 eq.14 (=Yu et al. 2001 eq.11)
-  // double term1 = epsi * StefanBoltzmanConstant * Ta_K * Ta_K;
-  // double num = Ri - term1 * Ta_K * Ta_K -  he * (vc_SaturatedVapourPressure - vc_VapourPressure);
+  // double term1 = epsi * StefanBoltzmanConstant * Ta_K_2;
+  // double num = Ri - term1 * Ta_K_2 -  he * (vc_SaturatedVapourPressure - vc_VapourPressure);
   // double denom = term1 * Ta_K + ht + he * vc_SaturatedVapourPressureSlope;
-  // // double num = (Ri - epsi * StefanBoltzmanConstant * pow(Ta_K, 4.) - he *
+  // // double num = (Ri - epsi * StefanBoltzmanConstant * Ta_K_2 * Ta_K_2 - he *
   // (vc_SaturatedVapourPressure - vc_VapourPressure));
-  // // double denom = (4 * epsi * StefanBoltzmanConstant * pow(Ta_K, 3.) + ht + he * S); //
+  // // double denom = (4 * epsi * StefanBoltzmanConstant * Ta_K * Ta_K_2 + ht + he * S); //
   // num/denom results in a temperture difference [°C or K, which is eqivalent for a difference]
   // double delta_T = (num / denom);
 
@@ -4340,10 +4342,10 @@ double CropModule::leafTemperature_Paw(double globalRad_Wpm2, double Ta_C,
   double vc_SaturatedVapourPressureCurvature = 1e3 * vc_SaturatedVapourPressureSlope *
                                                (4098.0 - 2.0 * (Ta_C + 237.3)) /
                                                ((Ta_C + 237.3) * (Ta_C + 237.3));
-  double term1 = epsi * StefanBoltzmanConstant * Ta_K * Ta_K;
+  double term1 = epsi * StefanBoltzmanConstant * Ta_K_2;
   double a = 6. * term1 + vc_SaturatedVapourPressureCurvature * he / 2.;
   double b = ht + 4. * term1 * Ta_K + he * 1e3 * vc_SaturatedVapourPressureSlope;
-  double c = term1 * Ta_K * Ta_K - Ri + he * 1e3 * vc_VapourPressure;
+  double c = term1 * Ta_K_2 - Ri + he * 1e3 * vc_VapourPressure;
   double term2 = b * b - 4. * a * c;
   assert(term2 > 0.);
   // double delta_T = (-b + sqrt(term2)) / (2. * a); // positive sqrt
