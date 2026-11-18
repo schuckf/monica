@@ -293,6 +293,8 @@ void MonicaModel::seedCrop(mas::schema::model::monica::CropSpec::Reader reader) 
                                                    avgAirTemp);
                                               },
                                               _intercropping);
+    _currentCropModule->setMaxPotentialEvapotranspiration(
+        soilMoisture().params().pm_MaxPotentialEvapotranspiration);
 
     //if (crop->separatePerennialCropParameters())
     //  _currentCropModule->setPerennialCropParameters(crop->perennialCropParameters());
@@ -347,6 +349,8 @@ void MonicaModel::seedCrop(Crop* crop) {
                                                    avgAirTemp);
                                               },
                                               _intercropping);
+    _currentCropModule->setMaxPotentialEvapotranspiration(
+        soilMoisture().params().pm_MaxPotentialEvapotranspiration);
 
     if (crop->separatePerennialCropParameters())
       _currentCropModule->
@@ -622,6 +626,16 @@ void MonicaModel::applyIrrigation(double amount, double nitrateConcentration,
   //if the production process has still some defined manual irrigation dates
   if (!_simPs.p_UseAutomaticIrrigation) {
     _soilColumn->applyIrrigation(amount, nitrateConcentration);
+    _soilOrganic->addIrrigationWater(amount);
+    addDailySumIrrigationWater(amount);
+  }
+}
+
+void MonicaModel::applyIrrigationAtLayer(double amount, double nitrateConcentration, int layer) {
+  if (!_simPs.p_UseAutomaticIrrigation) {
+    _soilColumn->applyIrrigationAtLayer(
+        amount, nitrateConcentration,
+        std::min(static_cast<size_t>(layer), _soilColumn->size() - 1));
     _soilOrganic->addIrrigationWater(amount);
     addDailySumIrrigationWater(amount);
   }

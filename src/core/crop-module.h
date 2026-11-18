@@ -497,6 +497,9 @@ public:
 
   void setPerennialCropParameters(const CropParameters& cps) { perennialCropParams = kj::heap<CropParameters>(cps); }
 
+  //! the soil moisture parameters' cap of the potential evapotranspiration [mm d-1]
+  void setMaxPotentialEvapotranspiration(double maxPotET) { _maxPotentialEvapotranspiration = maxPotET; }
+
   void fc_UpdateCropParametersForPerennial();
 
   std::pair<const std::vector<double>&, const std::vector<double>&> sunlitAndShadedLAI() const {
@@ -769,6 +772,7 @@ private:
   double vc_PotentialTranspiration{0.0};
   double vc_PotentialTranspiration_h{0.0};                                  // FS: hourly
   double vc_ReferenceEvapotranspiration{0.0};
+  double _maxPotentialEvapotranspiration{6.5}; //!< [mm d-1], SoilMoistureModuleParameters' (not serialized)
   double vc_RelativeTotalDevelopment{0.0};
   double vc_RemainingEvapotranspiration{0.0};
   double vc_RemainingEvapotranspiration_h{0.0};                             // FS: hourly
