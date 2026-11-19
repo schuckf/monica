@@ -1962,6 +1962,7 @@ Errors SoilMoistureModuleParameters::merge(json11::Json j) {
   set_double_value(pm_MaxPercolationRate, j, "MaxPercolationRate");
   set_double_value(pm_MoistureInitValue, j, "MoistureInitValue");
   set_double_value(pm_MaxPotentialEvapotranspiration, j, "MaxPotentialEvapotranspiration");
+  set_double_value(pm_MaxPotentialEvapotranspiration_h, j, "MaxPotentialEvapotranspiration_h");
 
   return res;
 }
@@ -1994,7 +1995,8 @@ json11::Json SoilMoistureModuleParameters::to_json() const {
     {"MaximumEvaporationImpactDepth", pm_MaximumEvaporationImpactDepth},
     {"MaxPercolationRate", pm_MaxPercolationRate},
     {"MoistureInitValue", pm_MoistureInitValue},
-    {"MaxPotentialEvapotranspiration", pm_MaxPotentialEvapotranspiration}
+    {"MaxPotentialEvapotranspiration", pm_MaxPotentialEvapotranspiration},
+    {"MaxPotentialEvapotranspiration_h", pm_MaxPotentialEvapotranspiration_h}
   };
 }
 

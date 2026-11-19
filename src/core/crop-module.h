@@ -499,6 +499,7 @@ public:
 
   //! the soil moisture parameters' cap of the potential evapotranspiration [mm d-1]
   void setMaxPotentialEvapotranspiration(double maxPotET) { _maxPotentialEvapotranspiration = maxPotET; }
+  void setMaxPotentialEvapotranspiration_h(double maxPotET_h) { _maxPotentialEvapotranspiration_h = maxPotET_h; }
 
   void fc_UpdateCropParametersForPerennial();
 
@@ -773,6 +774,7 @@ private:
   double vc_PotentialTranspiration_h{0.0};                                  // FS: hourly
   double vc_ReferenceEvapotranspiration{0.0};
   double _maxPotentialEvapotranspiration{6.5}; //!< [mm d-1], SoilMoistureModuleParameters' (not serialized)
+  double _maxPotentialEvapotranspiration_h{1.0};                            // FS: hourly  param to mimic the daily 6.5 mm cap from HERMES, adjusted to hourly
   double vc_RelativeTotalDevelopment{0.0};
   double vc_RemainingEvapotranspiration{0.0};
   double vc_RemainingEvapotranspiration_h{0.0};                             // FS: hourly

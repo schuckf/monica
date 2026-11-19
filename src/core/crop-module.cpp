@@ -3426,6 +3426,16 @@ void CropModule::fc_CropPhotosynthesis(double vw_MeanAirTemperature, double vw_M
             subdaily_photosynthesis(i, sp, vw_AtmosphericCO2Concentration, parfrac, cscor, parcor);
         dailyGP += vc_GrossCO2Assimilation_h * vc_OverclockingTimeStep;
         dailyGPRef += vc_GrossCO2AssimilationReference_h * vc_OverclockingTimeStep;
+
+        if (cropPs.__enable_hourly_outputs__) {
+          hout() << currentDate.toIsoDateString() << "," << t << "," << speciesPs.pc_SpeciesId
+                 << "/" << cultivarPs.pc_CultivarId << "," << vc_DevelopmentalStage << ","
+                 << sp.hourlyAirT.at(i) << "," << leafT << "," << sp.hourlyGlobrad.at(i) << ","
+                 << sp.hourlyExtrarad.at(i) << "," << sp.hourlySolarEl.at(i) * 180. / M_PI << ","
+                 << vc_GrossCO2Assimilation_h << "," << vc_GrossCO2AssimilationReference_h << ","
+                 << "nan" << "," << "nan" << ","
+                 << "nan" << "," << "nan" << endl;
+        }
       }
     }
     vc_GrossCO2Assimilation =
@@ -6187,9 +6197,10 @@ void CropModule::fc_CropWaterUptake_h(
 
   vc_PotentialEvapotranspiration_h = vc_ReferenceEvapotranspiration_h * vc_KcFactor; // [mm]
 
-  if (vc_PotentialEvapotranspiration_h > 1.0) { // FS: using 1.0 mm h-1 for now; find a source for
-                                                // realistic maximal hourly potential crop ET
-    vc_PotentialEvapotranspiration_h = 1.0;
+  if (vc_PotentialEvapotranspiration_h > _maxPotentialEvapotranspiration_h) { // FS: using 1.0 mm h-1 by
+    // default for now (estimated value), to mimic the daily _maxPotentialEvapotranspiration 
+    // (by default 6.5) cap from HERMES
+    vc_PotentialEvapotranspiration_h = _maxPotentialEvapotranspiration_h;
   }
 
   vc_RemainingEvapotranspiration_h = vc_PotentialEvapotranspiration_h; // [mm]
