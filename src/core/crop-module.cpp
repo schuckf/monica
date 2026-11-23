@@ -1347,7 +1347,9 @@ void CropModule::step(double vw_MeanAirTemperature, double vw_MaxAirTemperature,
                  << sp.hourlyExtrarad.at(i) << "," << sp.hourlySolarEl.at(i) * 180. / M_PI << ","
                  << vc_GrossCO2Assimilation_h << "," << vc_GrossCO2AssimilationReference_h << ","
                  << vc_ActualTranspiration_h << "," << vc_PotentialTranspiration_h << ","
-                 << vc_TranspirationDeficit_h << "," << vc_ReferenceEvapotranspiration_h << endl;
+                 << vc_TranspirationDeficit_h << "," << vc_ReferenceEvapotranspiration_h << ","
+                 << vc_KcFactor  << "," << vc_SoilCoverage << ","
+                 << vc_RemainingEvapotranspiration_h << "," << vc_EvaporatedFromIntercept_h << endl;
         }
 
         // prepare aggregation back to daily time step
@@ -2313,10 +2315,14 @@ ostream &monica::hout(bool closeFile) {
                              ",sun_el"
                              ",GPhoto"
                              ",GPhotoRef"
-                             ",ET_a"
-                             ",ET_p"
+                             ",actualTranspiration"
+                             ",potentialTranspiration"
                              ",TranspDeficit"
                              ",ET_Ref"
+                             ",Kc"
+                             ",soilCover"
+                             ",remainingET"
+                             ",evaporatedFromIntercept"
                           << endl;
 
     init = true;
@@ -3433,6 +3439,8 @@ void CropModule::fc_CropPhotosynthesis(double vw_MeanAirTemperature, double vw_M
                  << sp.hourlyAirT.at(i) << "," << leafT << "," << sp.hourlyGlobrad.at(i) << ","
                  << sp.hourlyExtrarad.at(i) << "," << sp.hourlySolarEl.at(i) * 180. / M_PI << ","
                  << vc_GrossCO2Assimilation_h << "," << vc_GrossCO2AssimilationReference_h << ","
+                 << "nan" << "," << "nan" << ","
+                 << "nan" << "," << "nan" << "," 
                  << "nan" << "," << "nan" << ","
                  << "nan" << "," << "nan" << endl;
         }
