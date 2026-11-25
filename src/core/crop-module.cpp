@@ -1093,7 +1093,7 @@ void CropModule::step(double vw_MeanAirTemperature, double vw_MaxAirTemperature,
       // }
 
       auto sp =
-          subdaily_meteodata(currentDate, vw_MinAirTemperature, vw_MaxAirTemperature, vw_WindSpeed);
+          subdaily_meteodata(currentDate, vw_MinAirTemperature, vw_MaxAirTemperature, vw_WindSpeed, cropPs.__hourly_in_data_RadiationInUnit__);
       double vw_ReferenceEvapotranspiration_h = -1.0; // since this is not read in hourly
       const bool hourlyPrecipAvailable = (sp.hourlyPrecip.size() == vc_OcTS_num) &&
                                          std::all_of(sp.hourlyPrecip.begin(), sp.hourlyPrecip.end(),
@@ -1219,6 +1219,7 @@ void CropModule::step(double vw_MeanAirTemperature, double vw_MaxAirTemperature,
 
         double vc_MaintenanceRespirationAS_h = 0.0;
         double vc_GrowthRespirationAS_h = 0.0;
+        double vc_MaintenanceRespiration_h = 0.0;
         if (cropPs.__enable_hourly_respiration__) {
           // ####################################################################################
           // hourly maintenance respiration (simplified; inspired by AGROSIM / daily MONICA code)
@@ -1233,8 +1234,7 @@ void CropModule::step(double vw_MeanAirTemperature, double vw_MaxAirTemperature,
                                                          // * vc_ActiveFraction[i_Organ]; wenn nicht
                                                          // schon durch acc dead matter abgedeckt
           }
-          double vc_MaintenanceRespiration_h =
-              vc_MaintenanceRespirationSum_h *
+          vc_MaintenanceRespiration_h = vc_MaintenanceRespirationSum_h *
               cr::pow(2.0, (cropPs.pc_MaintenanceRespirationParameter1 *
                         (leafT - // FS: for now, this is air temperature (which is consistent with
                                  // the current photosynthesis implementation)
@@ -1341,15 +1341,17 @@ void CropModule::step(double vw_MeanAirTemperature, double vw_MaxAirTemperature,
         }
 
         if (cropPs.__enable_hourly_outputs__) {
-          hout() << currentDate.toIsoDateString() << "," << t << "," << speciesPs.pc_SpeciesId
-                 << "/" << cultivarPs.pc_CultivarId << "," << vc_DevelopmentalStage << ","
-                 << sp.hourlyAirT.at(i) << "," << leafT << "," << sp.hourlyGlobrad.at(i) << ","
-                 << sp.hourlyExtrarad.at(i) << "," << sp.hourlySolarEl.at(i) * 180. / M_PI << ","
-                 << vc_GrossCO2Assimilation_h << "," << vc_GrossCO2AssimilationReference_h << ","
-                 << vc_ActualTranspiration_h << "," << vc_PotentialTranspiration_h << ","
-                 << vc_TranspirationDeficit_h << "," << vc_ReferenceEvapotranspiration_h << ","
-                 << vc_KcFactor  << "," << vc_SoilCoverage << ","
-                 << vc_RemainingEvapotranspiration_h << "," << vc_EvaporatedFromIntercept_h << endl;
+          hout(cropPs.__hourly_outputs_fname__)
+          << currentDate.toIsoDateString() << "," << t << "," << speciesPs.pc_SpeciesId
+          << "/" << cultivarPs.pc_CultivarId << "," << vc_DevelopmentalStage << ","
+          << sp.hourlyAirT.at(i) << "," << leafT << "," << sp.hourlyGlobrad.at(i) << ","
+          << sp.hourlyExtrarad.at(i) << "," << sp.hourlySolarEl.at(i) * 180. / M_PI << ","
+          << vc_GrossCO2Assimilation_h << "," << vc_GrossCO2AssimilationReference_h << ","
+          << vc_Assimilates_h * 44 / 30 << "," << vc_MaintenanceRespiration_h * 44 / 30 << ","
+          << vc_ActualTranspiration_h << "," << vc_PotentialTranspiration_h << ","
+          << vc_TranspirationDeficit_h << "," << vc_ReferenceEvapotranspiration_h << ","
+          << vc_KcFactor  << "," << vc_SoilCoverage << ","
+          << vc_RemainingEvapotranspiration_h << "," << vc_EvaporatedFromIntercept_h << endl;
         }
 
         // prepare aggregation back to daily time step
@@ -2282,14 +2284,15 @@ double CropModule::fc_SoilCoverage() const { return 1.0 - (cr::exp(-0.5 * vc_Lea
 /**
  * @brief output csv structure for hourly photosynthesis outputs
  * 
+ * @param fname     file name (default is "hourly-outputs.csv")
  * @param closeFile
  * @return ostream&
  * 
  * @author FS
  * 
- * @example if (cropPs.__enable_hourly_outputs__) {hout() << << currentDate.toIsoDateString() << "," << t << "," << speciesPs.pc_SpeciesId << "/" << cultivarPs.pc_CultivarId << "," << vc_DevelopmentalStage << "," << ... << endl;}
+ * @example if (cropPs.__enable_hourly_outputs__) {hout("hourly-outputs.csv") << << currentDate.toIsoDateString() << "," << t << "," << speciesPs.pc_SpeciesId << "/" << cultivarPs.pc_CultivarId << "," << vc_DevelopmentalStage << "," << ... << endl;}
  */
-ostream &monica::hout(bool closeFile) {
+ostream &monica::hout(std::string fname, bool closeFile) {
 
   static ofstream out;
   static bool init = false;
@@ -2302,7 +2305,7 @@ ostream &monica::hout(bool closeFile) {
   }
 
   if (!init) {
-    out.open("hourly-outputs.csv");
+    out.open(fname);
     failed = out.fail();
     (failed ? cout : out) << "iso-date"
                              ",hour"
@@ -2315,6 +2318,8 @@ ostream &monica::hout(bool closeFile) {
                              ",sun_el"
                              ",GPhoto"
                              ",GPhotoRef"
+                             ",GPhotoStressed"
+                             ",MaintResp"
                              ",actualTranspiration"
                              ",potentialTranspiration"
                              ",TranspDeficit"
@@ -3422,7 +3427,7 @@ void CropModule::fc_CropPhotosynthesis(double vw_MeanAirTemperature, double vw_M
       double vw_ReferenceEvapotranspiration_h = -1.0;
 
       auto sp =
-          subdaily_meteodata(currentDate, vw_MinAirTemperature, vw_MaxAirTemperature, vw_WindSpeed);
+          subdaily_meteodata(currentDate, vw_MinAirTemperature, vw_MaxAirTemperature, vw_WindSpeed, cropPs.__hourly_in_data_RadiationInUnit__);
 
       // sub-daily overclocked loop
       for (int i = 0; i < vc_OcTS_num; ++i) {
@@ -3434,15 +3439,17 @@ void CropModule::fc_CropPhotosynthesis(double vw_MeanAirTemperature, double vw_M
         dailyGPRef += vc_GrossCO2AssimilationReference_h * vc_OverclockingTimeStep;
 
         if (cropPs.__enable_hourly_outputs__) {
-          hout() << currentDate.toIsoDateString() << "," << t << "," << speciesPs.pc_SpeciesId
-                 << "/" << cultivarPs.pc_CultivarId << "," << vc_DevelopmentalStage << ","
-                 << sp.hourlyAirT.at(i) << "," << leafT << "," << sp.hourlyGlobrad.at(i) << ","
-                 << sp.hourlyExtrarad.at(i) << "," << sp.hourlySolarEl.at(i) * 180. / M_PI << ","
-                 << vc_GrossCO2Assimilation_h << "," << vc_GrossCO2AssimilationReference_h << ","
-                 << "nan" << "," << "nan" << ","
-                 << "nan" << "," << "nan" << "," 
-                 << "nan" << "," << "nan" << ","
-                 << "nan" << "," << "nan" << endl;
+          hout(cropPs.__hourly_outputs_fname__)
+          << currentDate.toIsoDateString() << "," << t << "," << speciesPs.pc_SpeciesId
+          << "/" << cultivarPs.pc_CultivarId << "," << vc_DevelopmentalStage << ","
+          << sp.hourlyAirT.at(i) << "," << leafT << "," << sp.hourlyGlobrad.at(i) << ","
+          << sp.hourlyExtrarad.at(i) << "," << sp.hourlySolarEl.at(i) * 180. / M_PI << ","
+          << vc_GrossCO2Assimilation_h << "," << vc_GrossCO2AssimilationReference_h << ","
+          << "nan" << "," << "nan" << ","
+          << "nan" << "," << "nan" << ","
+          << "nan" << "," << "nan" << "," 
+          << "nan" << "," << "nan" << ","
+          << "nan" << "," << "nan" << endl;
         }
       }
     }
@@ -3736,6 +3743,7 @@ void CropModule::fc_CropPhotosynthesis(double vw_MeanAirTemperature, double vw_M
  * @param vw_MinAirTemperature used for temperature disaggregation
  * @param vw_MaxAirTemperature used for temperature disaggregation
  * @param vw_WindSpeed         used if no higher resolution wind speed is read in
+ * @param RadiationInUnit      default is hPhoto::unit::Wpm2
  * @return CropModule::subdaily_data
  * 
  * @author FS
@@ -3764,7 +3772,7 @@ CropModule::subdaily_data CropModule::subdaily_meteodata(const Tools::Date &curr
 
     if (!cropPs.__hourly_in_data__
              .empty()) { // hourly air temperature and diffuse and direct irradiance input from file
-      // generate isodate string                                                            //
+      // generate isodate string
       // auto sep = t < 10 ? "T0" : "T";
       // auto isodateformat_end = ":00:00";
       // auto current_isodatetime = current_isodate + sep + to_string(t) +
@@ -3782,9 +3790,14 @@ CropModule::subdaily_data CropModule::subdaily_meteodata(const Tools::Date &curr
                 << std::setw(2) << minute
                 << ":00";
       const std::string current_isodatetime = timestamp.str();
-
-      // read hourly data from json object dictionary __hourly_in_data__
-      auto hourly_data_in = cropPs.__hourly_in_data__.at(current_isodatetime).array_items();
+      json11::Json::array hourly_data_in;
+      try {
+        // read hourly data from json object dictionary __hourly_in_data__
+        hourly_data_in = cropPs.__hourly_in_data__.at(current_isodatetime).array_items();
+      } catch (const std::out_of_range& e) {
+        cerr << "timestamp missing in __hourly_in_data__: " << current_isodatetime << endl;
+        throw(std::runtime_error("timestamp missing in __hourly_in_data__: " + current_isodatetime));
+      }
       size_t varnum = hourly_data_in.size();
       sd._nvars_read_from_json.push_back(varnum);
       switch (varnum) {

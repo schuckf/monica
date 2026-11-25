@@ -29,6 +29,8 @@ Copyright (C) Leibniz Centre for Agricultural Landscape Research (ZALF)
 
 #include "json11/json11.hpp"
 
+#include "photosynthesis-hourly.h"  // FS: only imported for cropPs.__hourly_in_data_RadiationInUnit__{hPhoto::unit::Jpm2ph}
+
 #include "fbp.capnp.h"
 #include "model/monica/monica_params.capnp.h"
 #include "model/monica/monica_state.capnp.h"
@@ -747,7 +749,9 @@ struct DLL_API CropModuleParameters : public Tools::Json11Serializable {
   int __enable_hourly_photosynthesis__{ 0 };      //FS: should be 0 (=false) by default (1=true, 2=minimal version)
   bool __enable_hourly_respiration__{ false };    //FS: should be false by default
   bool __enable_hourly_outputs__{ false };        //FS: should be false by default
+  std::string __hourly_outputs_fname__{"hourly-outputs.csv"};
   json11::Json::object __hourly_in_data__;        //FS: quick & dirty option to read in hourly irradiance and temperature data dictionary style
+  hPhoto::unit __hourly_in_data_RadiationInUnit__{hPhoto::unit::MJpm2ph};  // FS: Maybe replace with a better way that actually lets the user specify the unit in the future?
   double __longitude__{ 0.0 };                    //FS: longitude required for hourly solar position calculations using real world time (required e.g. for consistency if real world hourly data is read in)
   double __UTC_offset__{ 0.0 };                   //FS: UTC offset required for hourly solar position calculations using real world time (required e.g. for consistency if real world hourly data is read in)
   bool __enable_leaf_temperature__{false};        //FS: leaf temperature model (used in hourly photosynthesis code)

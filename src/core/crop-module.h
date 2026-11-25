@@ -910,7 +910,7 @@ private:
 std::ostream& tout(bool closeFile = false);
 #endif
 
-std::ostream& hout(bool closeFile = false); // FS: hourly output data
+std::ostream& hout(std::string fname = "hourly-outputs.csv", bool closeFile = false); // FS: hourly output data
 
 } // namespace monica
 
