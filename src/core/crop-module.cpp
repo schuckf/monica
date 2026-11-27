@@ -1301,8 +1301,14 @@ void CropModule::step(double vw_MeanAirTemperature, double vw_MaxAirTemperature,
           int sunset_minus_3h_idx =
               bound(0, static_cast<int>(std::round((sp.sunsetH - 3) / vc_OverclockingTimeStep)),
                     static_cast<int>(sp.hourlyGlobrad.size()) - 1);
+
+          // assuming vw_DewAirTemperature = vw_MinAirTemperature, as suggested in FAO-56,
+          // resulting in vc_VapourPressure = vc_SaturatedVapourPressureMin
+          // Alternatively, something like vw_DewAirTemperature = _min_of_hourlyAirT (e.g. using
+          // if (!hourlyAirT.empty()) {auto [_min_it, _max__it] = minmax_element(
+          // hourlyAirT.begin(), hourlyAirT.end()); _min_of_hourlyAirT = *_min_it;)} could also work
           vc_ReferenceEvapotranspiration_h = fc_ReferenceEvapotranspiration_h(
-              vw_MinAirTemperature, sp.hourlyRH.at(i), vw_MeanAirTemperature,
+              vw_MinAirTemperature, sp.hourlyRH.at(i), sp.hourlyAirT.at(i),
               sp.hourlyWindSpeed.at(i), // vw_WindSpeed,
               vw_WindSpeedHeight, vw_AtmosphericCO2Concentration, sp.hourlyExtrarad.at(i),
               sp.hourlyExtrarad.at(sunset_minus_3h_idx), sp.hourlyGlobrad.at(i),
@@ -1667,7 +1673,7 @@ void CropModule::step(double vw_MeanAirTemperature, double vw_MaxAirTemperature,
     }
     auto [vc_Transpiration_na, vc_TranspirationDeficit_na] = fc_CropWaterUptake_notApplied(
         soilColumn.vm_GroundwaterTableLayer, vc_ReferenceEvapotranspiration_na,
-        vc_InterceptionStorage, 6.5);
+        vc_InterceptionStorage, _maxPotentialEvapotranspiration);
     // */
 
     fc_CropNUptake(soilColumn.vm_GroundwaterTableLayer, vc_CurrentTotalTemperatureSum,
@@ -3812,7 +3818,9 @@ CropModule::subdaily_data CropModule::subdaily_meteodata(const Tools::Date &curr
         sd.hourlyWindSpeed.push_back(hourly_data_in.at(4).number_value());
         [[fallthrough]];
       case 4: // hourly relative humidity
-        sd.hourlyRH.push_back(hourly_data_in.at(3).number_value());
+        double rh = hourly_data_in.at(3).number_value();
+        assert((rh >= 0.0) && (rh <= 1.0));
+        sd.hourlyRH.push_back(rh);
         [[fallthrough]];
       case 3: { // hourly diffuse and direct irradiances
         sd.hourlyAirT.push_back(hourly_data_in.at(0).number_value());
@@ -3862,11 +3870,12 @@ CropModule::subdaily_data CropModule::subdaily_meteodata(const Tools::Date &curr
                                                     UTC_offset,
                                                     true);
       sun_el = (sunpos.el_rad > hPhoto::eps) ? sunpos.el_rad : 0.;
-      her = hourlyRad_from_sun_el(vc_ExtraterrestrialRadiation,
-                                  vs_Latitude,
-                                  (time_e < 0) ? (vs_JulianDay-1) : vs_JulianDay,
-                                  sun_el,
-                                  vc_OverclockingTimeStep);
+      // her = hourlyRad_from_sun_el(vc_ExtraterrestrialRadiation,
+      //                             vs_Latitude,
+      //                             (time_e < 0) ? (vs_JulianDay-1) : vs_JulianDay,
+      //                             sun_el,
+      //                             vc_OverclockingTimeStep); // FS: this seems to be incompatible
+      her = sunpos.extrarad * vc_OverclockingTimeStep; // calculated with solar_position and therefore consistent
     } else {
       // use t as time here since these are temporally disaggregated variables at discrete sampling times (instantaneous)
       auto solar_el = solarElevation(t, vs_Latitude, vs_JulianDay);
@@ -4156,6 +4165,7 @@ CropModule::GP_results CropModule::subdaily_photosynthesis(size_t i,
       inst_diff_rad = 0.;
       inst_dir_rad = 0.;
     } else {
+      assert(sd.hourlyGlobrad.at(i) < max(0.3, 1.1 * sd.hourlyExtrarad.at(i))); // guard read in global radiation values
       auto in_rad = hPhoto::PAR_radiation(
           sd.hourlyGlobrad.at(i), sd.hourlyExtrarad.at(i), sd.hourlySolarEl.at(i), cscor, parcor,
           1.0, out_unit); // moved PAR calculation after canopy temperature calculation, since
@@ -5414,7 +5424,8 @@ double CropModule::fc_ReferenceEvapotranspiration(double vw_MaxAirTemperature,
  *
  * @param vs_HeightNN Height above sea level
  * @param vw_DewAirTemperature Air dewpoint temperature for the timestep (used for vapour pressure
- * calculation if relative humidity is not available (vw_RelativeHumidity <= 0.0))
+ * calculation if relative humidity is not available (vw_RelativeHumidity <= 0.0)). If not available,
+ * FAO-56 (Allen et al. 1998) suggests assuming Tdew = daily Tmin.
  * @param vw_RelativeHumidity_h Relative humidity [0...1]
  * @param vw_MeanAirTemperature_h Mean air temperature of the timestep
  * @param vw_WindSpeed_h Speed of wind for the timestep [m s-1]
@@ -5448,19 +5459,20 @@ double CropModule::fc_ReferenceEvapotranspiration_h(
   double vc_AtmosphericPressure; //[kPA]      // FS: depends on vs_HeightNN, which is const over
                                  //time; calculation moved towards the start of CropModule, after
                                  //vs_HeightNN is read in
-  // double vc_PsycrometerConstant;            //[kPA °C-1] // FS: definition moved to
-  // crop-module.h, in order to make it available for use in other methods double
-  // vc_SaturatedVapourPressure_h;      //[kPA]      // FS: definition moved to crop-module.h, in
-  // order to make it available for use in other methods double vc_VapourPressure_h; //[kPA]      //
-  // FS: definition moved to crop-module.h, in order to make it available for use in other methods
-  double vc_SaturationDeficit; //[kPA]
-  // double vc_SaturatedVapourPressureSlope_h; //[kPA °C-1] // FS: definition moved to
-  // crop-module.h, in order to make it available for use in other methods
-  double vc_WindSpeed_h_2m;                //[m s-1]
-  double vc_AerodynamicResistance_h;       //[s m-1]
-  double vc_SurfaceResistance_h;           //[s m-1]
-  double vc_ReferenceEvapotranspiration_h; //[mm]
-  double vw_NetRadiation_h;                //[MJ m-2]
+
+  // FS: variable declarations moved to crop-module.h, in order to make them available for use
+  // within other methods
+  // double vc_PsycrometerConstant;             //[kPA °C-1]
+  // double vc_SaturatedVapourPressure_h;       //[kPA]
+  // double vc_VapourPressure_h;                //[kPA]
+  // double vc_SaturatedVapourPressureSlope_h;  //[kPA °C-1]
+
+  double vc_SaturationDeficit;                  //[kPA]
+  double vc_WindSpeed_h_2m;                     //[m s-1]
+  double vc_AerodynamicResistance_h;            //[s m-1]
+  double vc_SurfaceResistance_h;                //[s m-1]
+  double vc_ReferenceEvapotranspiration_h;      //[mm]
+  double vw_NetRadiation_h;                     //[MJ m-2]
 
   const CropModuleParameters &user_crops = cropPs;
   double pc_SaturationBeta =
@@ -5489,18 +5501,11 @@ double CropModule::fc_ReferenceEvapotranspiration_h(
   // Calculation of the water vapour pressure
   if (vw_RelativeHumidity_h <= 0.0) {
     // Assuming Tdew = Tmin as suggested in FAO56 Allen et al. 1998
-    // vc_VapourPressure = vc_SaturatedVapourPressureMin;
-
-    // FS: So assuming vw_DewAirTemperature = vw_MinAirTemperature, or something like
-    // vw_DewAirTemperature = _min_of_hourlyAirT (calculated using e.g.
-    //     auto [_min_of_hourlyAirT_it, _max_of_hourlyAirT_it] = minmax_element(hourlyAirT.begin(),
-    //     hourlyAirT.end()); _min_of_hourlyAirT = *_min_of_hourlyAirT;) should work. Make sure to
-    //     use such temperature variables consistently (either daily vw_MinAirTemperature everywhere
-    //     or hourly based daily min air temperature everywere)!
     double vc_SaturatedVapourPressureDew =
         0.6108 * cr::exp((17.27 * vw_DewAirTemperature) / (237.3 + vw_DewAirTemperature)); // (eq.14)
     vc_VapourPressure_h = vc_SaturatedVapourPressureDew;
   } else {
+    assert(vw_RelativeHumidity_h <= 1.0);
     vc_VapourPressure_h = vw_RelativeHumidity_h * vc_SaturatedVapourPressure_h;
   }
   vc_VapourPressure_h = bound(0.0, vc_VapourPressure_h, vc_SaturatedVapourPressure_h);
@@ -6467,7 +6472,7 @@ void CropModule::fc_CropWaterUptake_h(
  * @param vc_GroundwaterTable
  * @param vc_ReferenceEvapotranspiration
  * @param vc_OxygenDeficit
- * @param potET_limit                       using 6.5 mm d-1 or 1.0 mm h-1 for now; find a source
+ * @param potET_limit see _maxPotentialEvapotranspiration or _maxPotentialEvapotranspiration_h
  * for realistic maximal hourly potential crop ET
  * @return vc_Transpiration, vc_TranspirationDeficit
  * 

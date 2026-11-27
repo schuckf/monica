@@ -1,3 +1,5 @@
+#include <iostream>
+
 #include "photosynthesis-hourly.h"
 #include "cr_math.h"
 
@@ -146,9 +148,15 @@ hPhoto::PAR_radiation_result hPhoto::PAR_radiation(double global_rad, double ext
     return result;
   }
 
-  if (solar_el < eps) {
+  if ((solar_el < eps) || (extra_terr_rad < eps)) {
     diffuse_fraction = 1.;
   } else {
+    if (global_rad > extra_terr_rad) {
+      // throw runtime_error("Detected global radiation exceeding extra-terrestrial radiation!");
+      std::cerr << "Detected global radiation exceeding extra-terrestrial radiation: "
+                << global_rad << " > " << extra_terr_rad << std::endl;
+      global_rad = min(global_rad, extra_terr_rad);
+    }
     diffuse_fraction = diffuse_fraction_hourly_f(global_rad, extra_terr_rad, solar_el);
   }
 

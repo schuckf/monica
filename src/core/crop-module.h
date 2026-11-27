@@ -193,7 +193,7 @@ public:
     std::vector<double> hourlyAirT;
     std::vector<double> hourlyIdif;     // [MJ m-2 per model timestep]
     std::vector<double> hourlyIdir;     // [MJ m-2 per model timestep]
-    std::vector<double> hourlyRH;
+    std::vector<double> hourlyRH;       // [0.0...1.0]
     std::vector<double> hourlyWindSpeed;
     std::vector<double> hourlyPrecip;
     double sunriseH;
