@@ -1634,6 +1634,7 @@ Errors CropModuleParameters::merge(json11::Json j) {
   set_bool_value(__enable_hourly_FvCB_photosynthesis__, j, "__enable_hourly_FvCB_photosynthesis__");
   set_int_value(__enable_hourly_photosynthesis__, j, "__enable_hourly_photosynthesis__");
   set_bool_value(__enable_hourly_respiration__, j, "__enable_hourly_respiration__");
+  set_bool_value(__DarkGrowthRespiration_fix__, j, "__DarkGrowthRespiration_fix__");
   set_bool_value(__enable_hourly_outputs__, j, "__enable_hourly_outputs__");
   set_string_value(__hourly_outputs_fname__, j, "__hourly_outputs_fname__");
   if (!j["__hourly_in_data__"].is_null()) {
@@ -1686,6 +1687,7 @@ json11::Json CropModuleParameters::to_json() const {
     {"__enable_hourly_FvCB_photosynthesis__", __enable_hourly_FvCB_photosynthesis__},
     {"__enable_hourly_photosynthesis__", __enable_hourly_photosynthesis__},
     {"__enable_hourly_respiration__", __enable_hourly_respiration__},
+    {"__DarkGrowthRespiration_fix__", __DarkGrowthRespiration_fix__},
     {"__enable_hourly_outputs__", __enable_hourly_outputs__},
     {"__hourly_outputs_fname__", __hourly_outputs_fname__},
     {"__hourly_in_data__", __hourly_in_data__},

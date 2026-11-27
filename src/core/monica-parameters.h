@@ -748,6 +748,7 @@ struct DLL_API CropModuleParameters : public Tools::Json11Serializable {
   
   int __enable_hourly_photosynthesis__{ 0 };      //FS: should be 0 (=false) by default (1=true, 2=minimal version)
   bool __enable_hourly_respiration__{ false };    //FS: should be false by default
+  bool __DarkGrowthRespiration_fix__{ false };    //FS: added experimental fix in case this is a bug
   bool __enable_hourly_outputs__{ false };        //FS: should be false by default
   std::string __hourly_outputs_fname__{"hourly-outputs.csv"};
   json11::Json::object __hourly_in_data__;        //FS: quick & dirty option to read in hourly irradiance and temperature data dictionary style

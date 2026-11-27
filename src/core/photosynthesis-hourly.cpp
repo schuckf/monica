@@ -155,7 +155,6 @@ hPhoto::PAR_radiation_result hPhoto::PAR_radiation(double global_rad, double ext
       // throw runtime_error("Detected global radiation exceeding extra-terrestrial radiation!");
       std::cerr << "Detected global radiation exceeding extra-terrestrial radiation: "
                 << global_rad << " > " << extra_terr_rad << std::endl;
-      global_rad = min(global_rad, extra_terr_rad);
     }
     diffuse_fraction = diffuse_fraction_hourly_f(global_rad, extra_terr_rad, solar_el);
   }

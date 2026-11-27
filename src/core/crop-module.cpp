@@ -1517,7 +1517,9 @@ void CropModule::step(double vw_MeanAirTemperature, double vw_MaxAirTemperature,
           vc_DarkGrowthRespiration =
               vc_GrowthRespirationSum *
               cr::pow(2.0, (cropPs.pc_GrowthRespirationParameter1 *
-                        (vc_PhotoTemperature - // FS: Why is vc_PhotoTemperature (= daytime
+                        ((cropPs.__DarkGrowthRespiration_fix__ ? 
+                          vc_NightTemperature :
+                           vc_PhotoTemperature) - // FS: Why is vc_PhotoTemperature (= daytime
                                               // temperature) used here? Is this intended?
                         cropPs.pc_GrowthRespirationParameter2))) *
               vc_NormalisedDayLength; // [kg CH2O ha-1]
@@ -3693,7 +3695,9 @@ void CropModule::fc_CropPhotosynthesis(double vw_MeanAirTemperature, double vw_M
     vc_DarkGrowthRespiration =
         vc_GrowthRespirationSum *
         cr::pow(2.0, (pc_GrowthRespirationParameter_1 *
-                  (vc_PhotoTemperature - // FS: Why is vc_PhotoTemperature (= daytime temperature)
+                  ((cropPs.__DarkGrowthRespiration_fix__ ? 
+                          vc_NightTemperature :
+                           vc_PhotoTemperature) - // FS: Why is vc_PhotoTemperature (= daytime temperature)
                                          // used here? Is this intended?
                    pc_GrowthRespirationParameter_2))) *
         vc_NormalisedDayLength; // [kg CH2O ha-1]
@@ -3818,9 +3822,8 @@ CropModule::subdaily_data CropModule::subdaily_meteodata(const Tools::Date &curr
         sd.hourlyWindSpeed.push_back(hourly_data_in.at(4).number_value());
         [[fallthrough]];
       case 4: // hourly relative humidity
-        double rh = hourly_data_in.at(3).number_value();
-        assert((rh >= 0.0) && (rh <= 1.0));
-        sd.hourlyRH.push_back(rh);
+        assert(hourly_data_in.at(3).number_value() <= 1.0);
+        sd.hourlyRH.push_back(hourly_data_in.at(3).number_value());
         [[fallthrough]];
       case 3: { // hourly diffuse and direct irradiances
         sd.hourlyAirT.push_back(hourly_data_in.at(0).number_value());
@@ -4146,8 +4149,8 @@ CropModule::GP_results CropModule::subdaily_photosynthesis(size_t i,
   double leafT;
 
   // hourly weather data
-  double inst_diff_rad, inst_dir_rad, hourlyPhoto, hourlyPhotoRef;
-  // double inst_glob_rad;
+  double inst_diff_rad, inst_dir_rad, hourlyPhoto, hourlyPhotoRef;  //, inst_glob_rad; 
+  double extra_rad;
   if ((!cropPs.__hourly_in_data__.empty()) &&
       (sd._nvars_read_from_json.at(i) !=
        7)) { // hourly diffuse and direct irradiance input from file
@@ -4161,17 +4164,31 @@ CropModule::GP_results CropModule::subdaily_photosynthesis(size_t i,
     // inst_glob_rad = inst_diff_rad + inst_dir_rad;
 
   } else {
-    if (sd.hourlyGlobrad.at(i) <= 0) {
+    if (sd.hourlyGlobrad.at(i) <= 0.) {
       inst_diff_rad = 0.;
       inst_dir_rad = 0.;
     } else {
-      assert(sd.hourlyGlobrad.at(i) < max(0.3, 1.1 * sd.hourlyExtrarad.at(i))); // guard read in global radiation values
+      assert(sd.hourlySolarEl.at(i) >= 0.);
+      // guard read in global radiation values
+      double atol = 0.1;
+      extra_rad = max(sd.hourlyGlobrad.at(i), sd.hourlyExtrarad.at(i));
+      if ((sd.hourlyGlobrad.at(i) - sd.hourlyExtrarad.at(i)) > atol) {
+        // cerr << "Global radiation exceeding Extraterrestrial radiation by " << sd.hourlyGlobrad.at(i) - sd.hourlyExtrarad.at(i)
+        // << " (" << sd.hourlyGlobrad.at(i) << " > " << sd.hourlyExtrarad.at(i) << ")" << endl
+        ;
+        // throw runtime_error("Global radiation exceeding Extraterrestrial radiation!");
+      }
+      double pf = 1.0;
       auto in_rad = hPhoto::PAR_radiation(
-          sd.hourlyGlobrad.at(i), sd.hourlyExtrarad.at(i), sd.hourlySolarEl.at(i), cscor, parcor,
-          1.0, out_unit); // moved PAR calculation after canopy temperature calculation, since
-                          // energy balance is affected by total radiation!
+          sd.hourlyGlobrad.at(i), extra_rad, sd.hourlySolarEl.at(i), cscor, parcor,
+          pf, out_unit); // moved PAR calculation after canopy temperature calculation, since
+                         // energy balance is affected by total radiation!
       inst_diff_rad = in_rad.diffuse; // (unit ground area)
       inst_dir_rad = in_rad.direct;   // (unit ground area)
+      // cerr << abs(inst_diff_rad + inst_dir_rad
+      //   - hPhoto::convert_MJpm2ph_to_unit(sd.hourlyGlobrad.at(i) * pf, out_unit)) << endl;
+      assert(abs(inst_diff_rad + inst_dir_rad
+        - hPhoto::convert_MJpm2ph_to_unit(sd.hourlyGlobrad.at(i) * pf, out_unit)) < 1e-2);
     }
   }
 
